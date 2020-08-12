@@ -105,6 +105,8 @@ import sun.misc.SharedSecrets;
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
+ *           用数组实现了一个二叉堆，从而实现按优先级从小到大出队列。
+ *           没有notFull条件，当元素个数超出数组长度时，执行扩容操作。
  */
 @SuppressWarnings("unchecked")
 public class PriorityBlockingQueue<E> extends AbstractQueue<E>
@@ -326,12 +328,12 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             return null;
         else {
             Object[] array = queue;
-            E result = (E) array[0];
+            E result = (E) array[0]; //因为是最小二叉堆，对顶就是要出队列的元素
             E x = (E) array[n];
             array[n] = null;
             Comparator<? super E> cmp = comparator;
             if (cmp == null)
-                siftDownComparable(0, x, array, n);
+                siftDownComparable(0, x, array, n); //调整堆siftDown
             else
                 siftDownUsingComparator(0, x, array, n, cmp);
             size = n;
@@ -487,8 +489,10 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         try {
             Comparator<? super E> cmp = comparator;
             if (cmp == null)
+                //没有定义比较操作， 使用元素自带的比较功能，元素入堆siftUp
                 siftUpComparable(n, e, array);
             else
+                //??
                 siftUpUsingComparator(n, e, array, cmp);
             size = n + 1;
             notEmpty.signal();

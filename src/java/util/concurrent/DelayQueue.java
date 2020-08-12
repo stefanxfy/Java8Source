@@ -71,6 +71,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
     implements BlockingQueue<E> {
 
     private final transient ReentrantLock lock = new ReentrantLock();
+    //优先队列
     private final PriorityQueue<E> q = new PriorityQueue<E>();
 
     /**
@@ -139,7 +140,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
         try {
             q.offer(e);
             if (q.peek() == e) {
-                //若是堆顶元素，延迟时间最小 就唤醒消费者
+                //若是堆顶元素，延迟时间最小 就唤醒take线程
                 leader = null;
                 available.signal();
             }
@@ -207,22 +208,29 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
         lock.lockInterruptibly();
         try {
             for (;;) {
-                E first = q.peek();
+                E first = q.peek();//取出二叉堆 对顶元素  也就是延迟时间最小的
                 if (first == null)
+                    //队列为空  take线程阻塞
                     available.await();
                 else {
                     long delay = first.getDelay(NANOSECONDS);
                     if (delay <= 0)
+                        //该执行了  出队
                         return q.poll();
                     first = null; // don't retain ref while waiting
                     if (leader != null)
+                        //如果已经有其他线程在等了  则当前take线程无限期等待
+                        //也就是说延迟任务只能执行一次
                         available.await();
                     else {
+                        //leader为空 赋值当前线程
                         Thread thisThread = Thread.currentThread();
                         leader = thisThread;
                         try {
+                            //等待delay  释放锁
                             available.awaitNanos(delay);
                         } finally {
+                            //等待时  会往下走吗
                             if (leader == thisThread)
                                 leader = null;
                         }
@@ -231,6 +239,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
             }
         } finally {
             if (leader == null && q.peek() != null)
+                //当前take线程是leader  且获取了堆顶元素   唤醒其他take线程
                 available.signal();
             lock.unlock();
         }

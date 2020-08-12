@@ -74,7 +74,7 @@ import java.util.Spliterator;
  * <p>This class is a member of the
  * <a href="{@docRoot}/../technotes/guides/collections/index.html">
  * Java Collections Framework</a>.
- *
+ *环形队列 ???
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
@@ -160,6 +160,8 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         final Object[] items = this.items;
         items[putIndex] = x;
         if (++putIndex == items.length)
+            //当下一个put index 为 items.length，说明已经满了，put线程会等待
+            //唤醒take线程取走0 index的元素
             putIndex = 0;
         count++;
         notEmpty.signal();
@@ -177,10 +179,13 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         E x = (E) items[takeIndex];
         items[takeIndex] = null;
         if (++takeIndex == items.length)
+            //取完了 下次就从0 开始取
             takeIndex = 0;
         count--;
         if (itrs != null)
+            //????
             itrs.elementDequeued();
+        //唤醒 put线程
         notFull.signal();
         return x;
     }
@@ -350,6 +355,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         lock.lockInterruptibly();
         try {
             while (count == items.length)
+                //满了  put线程等待
                 notFull.await();
             enqueue(e);
         } finally {
@@ -400,6 +406,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         lock.lockInterruptibly();
         try {
             while (count == 0)
+                //空了  take线程等待
                 notEmpty.await();
             return dequeue();
         } finally {
