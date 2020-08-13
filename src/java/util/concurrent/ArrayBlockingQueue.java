@@ -74,7 +74,7 @@ import java.util.Spliterator;
  * <p>This class is a member of the
  * <a href="{@docRoot}/../technotes/guides/collections/index.html">
  * Java Collections Framework</a>.
- *环形队列 ???
+ * 环形队列
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
