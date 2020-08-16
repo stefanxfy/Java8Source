@@ -82,7 +82,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
     private static final long serialVersionUID = -6903933977591709194L;
 
     /*
-     * A variant of the "two lock queue" algorithm.  The putLock gates
+     * A variant offerof the "two lock queue" algorithm.  The putLock gates
      * entry to put (and offer), and has an associated condition for
      * waiting puts.  Similarly for the takeLock.  The "count" field
      * that they both rely on is maintained as an atomic to avoid
@@ -140,12 +140,14 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
     private final AtomicInteger count = new AtomicInteger();
 
     /**
+     * //对头是null
      * Head of linked list.
      * Invariant: head.item == null
      */
     transient Node<E> head;
 
     /**
+     * 队尾也是null
      * Tail of linked list.
      * Invariant: last.next == null
      */
@@ -213,6 +215,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         Node<E> first = h.next;
         h.next = h; // help GC
         head = first;
+
         E x = first.item;
         first.item = null;
         return x;
@@ -347,16 +350,21 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
              * for all other uses of count in other wait guards.
              */
             while (count.get() == capacity) {
+                //满了 ，不满-等待
                 notFull.await();
             }
+            //入队列 ，入队尾
             enqueue(node);
+            //count+1 返回以前的值  the previous value
             c = count.getAndIncrement();
             if (c + 1 < capacity)
+                //通知其他put线程
                 notFull.signal();
         } finally {
             putLock.unlock();
         }
         if (c == 0)
+            //队列空后 第一次put  唤醒take线程
             signalNotEmpty();
     }
 
@@ -370,7 +378,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException {@inheritDoc}
      */
     public boolean offer(E e, long timeout, TimeUnit unit)
-        throws InterruptedException {
+            throws InterruptedException {
 
         if (e == null) throw new NullPointerException();
         long nanos = unit.toNanos(timeout);
@@ -381,17 +389,22 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         try {
             while (count.get() == capacity) {
                 if (nanos <= 0)
+                    //不阻塞 直接返回false
                     return false;
+                //阻塞nanos时间
                 nanos = notFull.awaitNanos(nanos);
             }
+            //入队列、队尾
             enqueue(new Node<E>(e));
             c = count.getAndIncrement();
             if (c + 1 < capacity)
+                //唤醒，还可以再入
                 notFull.signal();
         } finally {
             putLock.unlock();
         }
         if (c == 0)
+            //唤醒所有非空，可以取？
             signalNotEmpty();
         return true;
     }
@@ -439,16 +452,21 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
         takeLock.lockInterruptibly();
         try {
             while (count.get() == 0) {
+                //空了 非空等待
                 notEmpty.await();
             }
+            //出队列
             x = dequeue();
+            //count-1  返回以前的值  the previous value
             c = count.getAndDecrement();
             if (c > 1)
+                //唤醒其他 take线程
                 notEmpty.signal();
         } finally {
             takeLock.unlock();
         }
         if (c == capacity)
+            //队列满之后，第一次take后，唤醒put线程
             signalNotFull();
         return x;
     }
@@ -651,7 +669,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
             int size = count.get();
             if (a.length < size)
                 a = (T[])java.lang.reflect.Array.newInstance
-                    (a.getClass().getComponentType(), size);
+                        (a.getClass().getComponentType(), size);
 
             int k = 0;
             for (Node<E> p = head.next; p != null; p = p.next)
@@ -739,11 +757,14 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
             int i = 0;
             try {
                 while (i < n) {
+                    //head是空的，取下一个
                     Node<E> p = h.next;
+                    //将item放入新集合
                     c.add(p.item);
+                    //旧item设置为空 help gc
                     p.item = null;
-                    h.next = h;
-                    h = p;
+                    h.next = h; //help  gc
+                    h = p; //循环往复
                     ++i;
                 }
                 return n;
@@ -752,6 +773,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
                 if (i > 0) {
                     // assert h.item == null;
                     head = h;
+                    //???
                     signalNotFull = (count.getAndAdd(-i) == capacity);
                 }
             }
@@ -876,8 +898,8 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
             int b = batch;
             int n = (b <= 0) ? 1 : (b >= MAX_BATCH) ? MAX_BATCH : b + 1;
             if (!exhausted &&
-                ((h = current) != null || (h = q.head.next) != null) &&
-                h.next != null) {
+                    ((h = current) != null || (h = q.head.next) != null) &&
+                    h.next != null) {
                 Object[] a = new Object[n];
                 int i = 0;
                 Node<E> p = current;
@@ -901,8 +923,8 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
                 if (i > 0) {
                     batch = i;
                     return Spliterators.spliterator
-                        (a, 0, i, Spliterator.ORDERED | Spliterator.NONNULL |
-                         Spliterator.CONCURRENT);
+                            (a, 0, i, Spliterator.ORDERED | Spliterator.NONNULL |
+                                    Spliterator.CONCURRENT);
                 }
             }
             return null;
@@ -965,7 +987,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
 
         public int characteristics() {
             return Spliterator.ORDERED | Spliterator.NONNULL |
-                Spliterator.CONCURRENT;
+                    Spliterator.CONCURRENT;
         }
     }
 
@@ -999,7 +1021,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      * followed by a null
      */
     private void writeObject(java.io.ObjectOutputStream s)
-        throws java.io.IOException {
+            throws java.io.IOException {
 
         fullyLock();
         try {
@@ -1025,7 +1047,7 @@ public class LinkedBlockingQueue<E> extends AbstractQueue<E>
      * @throws java.io.IOException if an I/O error occurs
      */
     private void readObject(java.io.ObjectInputStream s)
-        throws java.io.IOException, ClassNotFoundException {
+            throws java.io.IOException, ClassNotFoundException {
         // Read in capacity, and any hidden stuff
         s.defaultReadObject();
 

@@ -328,11 +328,12 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             return null;
         else {
             Object[] array = queue;
-            E result = (E) array[0]; //因为是最小二叉堆，对顶就是要出队列的元素
+            E result = (E) array[0]; //因为是最小二叉堆，堆顶就是要出队列的元素
             E x = (E) array[n];
             array[n] = null;
             Comparator<? super E> cmp = comparator;
             if (cmp == null)
+                //堆化
                 siftDownComparable(0, x, array, n); //调整堆siftDown
             else
                 siftDownUsingComparator(0, x, array, n, cmp);
@@ -351,20 +352,26 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * methods that are otherwise identical. (Similarly for siftDown.)
      * These methods are static, with heap state as arguments, to
      * simplify use in light of possible comparator exceptions.
-     *
+     * 从下往上堆化
      * @param k the position to fill
      * @param x the item to insert
      * @param array the heap array
+     *
      */
     private static <T> void siftUpComparable(int k, T x, Object[] array) {
         Comparable<? super T> key = (Comparable<? super T>) x;
         while (k > 0) {
+            //无符号右移，parent一定是正数， 相当于
+            //parent = (k-1) / 2
             int parent = (k - 1) >>> 1;
             Object e = array[parent];
             if (key.compareTo((T) e) >= 0)
+                //x >= e
                 break;
+            //x <= e，e下移到k
             array[k] = e;
             k = parent;
+            // 从下往上循环比较大小
         }
         array[k] = key;
     }
@@ -398,8 +405,10 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             Comparable<? super T> key = (Comparable<? super T>)x;
             int half = n >>> 1;           // loop while a non-leaf
             while (k < half) {
+                //左孩子
                 int child = (k << 1) + 1; // assume left child is least
                 Object c = array[child];
+                //右孩子
                 int right = child + 1;
                 if (right < n &&
                     ((Comparable<? super T>) c).compareTo((T) array[right]) > 0)
@@ -485,14 +494,15 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         int n, cap;
         Object[] array;
         while ((n = size) >= (cap = (array = queue).length))
+            //满了  扩容
             tryGrow(array, cap);
         try {
             Comparator<? super E> cmp = comparator;
             if (cmp == null)
-                //没有定义比较操作， 使用元素自带的比较功能，元素入堆siftUp
+                //没有定义比较器，使用元素自带的比较功能，元素入堆siftUp
+                //从下往上堆化，循环比较
                 siftUpComparable(n, e, array);
             else
-                //??
                 siftUpUsingComparator(n, e, array, cmp);
             size = n + 1;
             notEmpty.signal();
@@ -643,6 +653,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
                 siftDownUsingComparator(i, moved, array, n, cmp);
             if (array[i] == moved) {
                 if (cmp == null)
+                    //从下往上堆化，循环比较
                     siftUpComparable(i, moved, array);
                 else
                     siftUpUsingComparator(i, moved, array, cmp);
