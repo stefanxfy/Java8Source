@@ -147,6 +147,7 @@ public class ScheduledThreadPoolExecutor
      *    instrumentation, which are needed because subclasses cannot
      *    otherwise override submit methods to get this effect. These
      *    don't have any impact on pool control logic though.
+     *
      */
 
     /**
@@ -184,6 +185,7 @@ public class ScheduledThreadPoolExecutor
         private final long sequenceNumber;
 
         /** The time the task is enabled to execute in nanoTime units */
+        //任务被调用的执行时刻
         private long time;
 
         /**
@@ -192,6 +194,7 @@ public class ScheduledThreadPoolExecutor
          * indicates fixed-delay execution.  A value of 0 indicates a
          * non-repeating task.
          */
+        //周期性执行的时间间隔
         private final long period;
 
         /** The actual task to be re-enqueued by reExecutePeriodic */
@@ -448,7 +451,7 @@ public class ScheduledThreadPoolExecutor
      * @throws IllegalArgumentException if {@code corePoolSize < 0}
      */
     public ScheduledThreadPoolExecutor(int corePoolSize) {
-        //阻塞队列是一个延时阻塞队列
+        //阻塞队列是一个延时阻塞队列,maximumPoolSize = Integer.MAX_VALUE
         super(corePoolSize, Integer.MAX_VALUE, 0, NANOSECONDS,
               new DelayedWorkQueue());
     }
@@ -549,10 +552,11 @@ public class ScheduledThreadPoolExecutor
                                        TimeUnit unit) {
         if (command == null || unit == null)
             throw new NullPointerException();
-        //将任务装饰成RunnableScheduledFuture对象
+        //将任务包装成RunnableScheduledFuture对象
         RunnableScheduledFuture<?> t = decorateTask(command,
             new ScheduledFutureTask<Void>(command, null,
                                           triggerTime(delay, unit)));
+        //延迟执行 加延迟阻塞队列+启动一个空的Worker线程
         delayedExecute(t);
         return t;
     }
@@ -570,6 +574,7 @@ public class ScheduledThreadPoolExecutor
             new ScheduledFutureTask<V>(callable,
                                        triggerTime(delay, unit)));
         delayedExecute(t);
+        //延迟执行 加延迟阻塞队列+启动一个空的Worker线程
         return t;
     }
 
@@ -586,14 +591,17 @@ public class ScheduledThreadPoolExecutor
             throw new NullPointerException();
         if (period <= 0)
             throw new IllegalArgumentException();
+
         ScheduledFutureTask<Void> sft =
             new ScheduledFutureTask<Void>(command,
                                           null,
                                           //传入第一次延时时间 now+initialDelay
                                           triggerTime(initialDelay, unit),
                                           unit.toNanos(period));
+        //将任务包装成RunnableScheduledFuture对象
         RunnableScheduledFuture<Void> t = decorateTask(command, sft);
         sft.outerTask = t;
+        //延迟执行 加延迟阻塞队列+启动一个空的Worker线程
         delayedExecute(t);
         return t;
     }
@@ -617,8 +625,10 @@ public class ScheduledThreadPoolExecutor
                                           triggerTime(initialDelay, unit),
                                           //重点！ 传入的delay取反了,用delay正负来区分执行间隔是否固定
                                           unit.toNanos(-delay));
+        //将任务包装成RunnableScheduledFuture对象
         RunnableScheduledFuture<Void> t = decorateTask(command, sft);
         sft.outerTask = t;
+        //延迟执行 加延迟阻塞队列+启动一个空的Worker线程
         delayedExecute(t);
         return t;
     }
@@ -1036,15 +1046,19 @@ public class ScheduledThreadPoolExecutor
             try {
                 int i = size;
                 if (i >= queue.length)
+                    //扩容
                     grow();
                 size = i + 1;
                 if (i == 0) {
+                    //如果是入的是第一个元素，不需要堆化
                     queue[0] = e;
                     setIndex(e, 0);
                 } else {
+                    //堆化
                     siftUp(i, e);
                 }
                 if (queue[0] == e) {
+                    //如果堆顶元素刚好是入队列的元素，则唤醒take
                     leader = null;
                     available.signal();
                 }
@@ -1101,15 +1115,19 @@ public class ScheduledThreadPoolExecutor
             lock.lockInterruptibly();
             try {
                 for (;;) {
-                    RunnableScheduledFuture<?> first = queue[0];
+                    RunnableScheduledFuture<?> first = queue[0]; //取出堆顶元素
                     if (first == null)
+                        //堆为空，等待
                         available.await();
                     else {
                         long delay = first.getDelay(NANOSECONDS);
                         if (delay <= 0)
+                            //到了执行时间，出队列
                             return finishPoll(first);
                         first = null; // don't retain ref while waiting
+                        //还没到执行时间
                         if (leader != null)
+                            //此时若有其他take线程在等待，当前take将无限期等待
                             available.await();
                         else {
                             Thread thisThread = Thread.currentThread();
