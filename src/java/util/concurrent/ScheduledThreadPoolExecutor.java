@@ -242,6 +242,11 @@ public class ScheduledThreadPoolExecutor
             return unit.convert(time - now(), NANOSECONDS);
         }
 
+        /**
+         * 比较this 和 other谁先执行
+         * @param other
+         * @return <=0 this先执行
+         */
         public int compareTo(Delayed other) {
             if (other == this) // compare zero if same object
                 return 0;
@@ -257,6 +262,7 @@ public class ScheduledThreadPoolExecutor
                 else
                     return 1;
             }
+            //比较Delay
             long diff = getDelay(NANOSECONDS) - other.getDelay(NANOSECONDS);
             return (diff < 0) ? -1 : (diff > 0) ? 1 : 0;
         }

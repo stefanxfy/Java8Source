@@ -277,7 +277,11 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 V result;
                 boolean ran;
                 try {
+                    //调用callable的call，并设置返回值
+                    //如果传进来的任务是Runnable，会被转换成callable
                     result = c.call();
+                    //若运行异常,ran=false，异常会被捕获处理
+                    //所以传进来的任务的run或者call代码块最好try-catch下
                     ran = true;
                 } catch (Throwable ex) {
                     result = null;
