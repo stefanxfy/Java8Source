@@ -668,19 +668,23 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
              */
 
             QNode s = null; // constructed/reused as needed
-            boolean isData = (e != null);
+            boolean isData = (e != null); // true put  false-take
 
             for (;;) {
                 QNode t = tail;
                 QNode h = head;
                 if (t == null || h == null)         // saw uninitialized value
+                    //队列还未初始化，自旋等待
                     continue;                       // spin
 
                 if (h == t || t.isData == isData) { // empty or same-mode
+                    //h == t 初始化队列  or  同一种模式
                     QNode tn = t.next;
                     if (t != tail)                  // inconsistent read
+                        //不一致了重新for
                         continue;
                     if (tn != null) {               // lagging tail
+                        //tn设置为tail
                         advanceTail(t, tn);
                         continue;
                     }
@@ -688,10 +692,14 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                         return null;
                     if (s == null)
                         s = new QNode(e, isData);
-                    if (!t.casNext(null, s))        // failed to link in
+                    //新建节点 加入尾部
+                    if (!t.casNext(null, s))
+                        // failed to link in
+                        //加入尾部失败
                         continue;
-
-                    advanceTail(t, s);              // swing tail and wait
+                    //加入尾部成功后，将tail指向 新节点
+                    advanceTail(t, s);
+                    // swing tail and wait  摇尾巴等待
                     Object x = awaitFulfill(s, e, timed, nanos);
                     if (x == s) {                   // wait was cancelled
                         clean(t, s);

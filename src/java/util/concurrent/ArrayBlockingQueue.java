@@ -183,7 +183,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
             takeIndex = 0;
         count--;
         if (itrs != null)
-            //????
+            //
             itrs.elementDequeued();
         //唤醒 put线程
         notFull.signal();
@@ -827,6 +827,9 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     class Itrs {
 
         /**
+         * 记录迭代器状态的一个单向列表，且node节点 是继承自WeakReference
+         * java有四大引用，强软弱虚，WeakReference就是其中的弱引用，被弱引用关联的对象，只能活到下次垃圾回收之前。
+         *
          * Node in a linked list of weak iterator references.
          */
         private class Node extends WeakReference<Itr> {
@@ -858,7 +861,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
          * Sweeps itrs, looking for and expunging stale iterators.
          * If at least one was found, tries harder to find more.
          * Called only from iterating thread.
-         *
+         * 查找清除陈旧的迭代器
          * @param tryHarder whether to start in try-harder mode, because
          * there is known to be at least one iterator to collect
          */
@@ -892,6 +895,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
                 final Node next = p.next;
                 if (it == null || it.isDetached()) {
                     // found a discarded/exhausted iterator
+                    //发现陈旧迭代器，清除
                     probes = LONG_SWEEP_PROBES; // "try harder"
                     // unlink p
                     p.clear();
@@ -926,6 +930,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         /**
          * Called whenever takeIndex wraps around to 0.
          *
+         * 通知所有迭代器，并删除所有已经过时的迭代器
          * Notifies all iterators, and expunges any that are now stale.
          */
         void takeIndexWrapped() {
@@ -934,9 +939,11 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
             for (Node o = null, p = head; p != null;) {
                 final Itr it = p.get();
                 final Node next = p.next;
+                //迭代器已经过时it=null，且应该被断开连接
                 if (it == null || it.takeIndexWrapped()) {
                     // unlink p
                     // assert it == null || it.isDetached();
+                    //迭代器过时
                     p.clear();
                     p.next = null;
                     if (o == null)
@@ -982,11 +989,14 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         /**
          * Called whenever the queue becomes empty.
          *
+         *
          * Notifies all active iterators that the queue is empty,
          * clears all weak refs, and unlinks the itrs datastructure.
          */
         void queueIsEmpty() {
             // assert lock.getHoldCount() == 1;
+            //通知所有活动迭代器，队列为空，
+            //清除所有弱引用，并断开itrs数据结构的链接。
             for (Node p = head; p != null; p = p.next) {
                 Itr it = p.get();
                 if (it != null) {
@@ -1004,8 +1014,12 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         void elementDequeued() {
             // assert lock.getHoldCount() == 1;
             if (count == 0)
+                //阻塞队列为空时，清除所有迭代器
+                //这里维护着迭代器的状态更新  大大加大代码维护程度
                 queueIsEmpty();
             else if (takeIndex == 0)
+                //阻塞队列不为空，take从头开始取
+                //通知所有迭代器，并删除所有已经过时的迭代器
                 takeIndexWrapped();
         }
     }
@@ -1169,6 +1183,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
          * lastRet >= 0, because hasNext() is about to return false for the
          * first time.  Call only from iterating thread.
          */
+        //下一个元素没有了，需要将当前迭代器分离，也就是变成陈旧的迭代器
         private void detach() {
             // Switch to detached mode
             // assert lock.getHoldCount() == 1;
@@ -1178,6 +1193,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
             // assert lastRet < 0 ^ lastItem != null;
             if (prevTakeIndex >= 0) {
                 // assert itrs != null;
+                //分离 陈旧
                 prevTakeIndex = DETACHED;
                 // try to unlink from itrs (but not too hard)
                 itrs.doSomeSweeping(true);
@@ -1194,6 +1210,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
             // assert lock.getHoldCount() == 0;
             if (nextItem != null)
                 return true;
+            //没有下一个元素了，迭代器分离处理
             noNext();
             return false;
         }
@@ -1229,14 +1246,17 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
             lock.lock();
             try {
                 if (!isDetached())
+                    //调整迭代器的参数
                     incorporateDequeues();
                 // assert nextIndex != NONE;
                 // assert lastItem == null;
                 lastRet = nextIndex;
                 final int cursor = this.cursor;
                 if (cursor >= 0) {
+                    //游标>=0
                     nextItem = itemAt(nextIndex = cursor);
                     // assert nextItem != null;
+                    //游标+1
                     this.cursor = incCursor(cursor);
                 } else {
                     nextIndex = NONE;
