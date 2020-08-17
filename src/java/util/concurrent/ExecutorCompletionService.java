@@ -104,6 +104,7 @@ package java.util.concurrent;
  *         use(result);
  * }}</pre>
  */
+//FutureTask的应用，完成的task放入阻塞队列
 public class ExecutorCompletionService<V> implements CompletionService<V> {
     private final Executor executor;
     private final AbstractExecutorService aes;
