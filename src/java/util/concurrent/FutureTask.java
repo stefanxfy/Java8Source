@@ -180,7 +180,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 try {
                     Thread t = runner;
                     if (t != null)
-                        //中断任务
+                        //中断当前线程
                         t.interrupt();
                 } finally { // final state
                     //设置state为中断
@@ -521,6 +521,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
     private static final long waitersOffset;
     static {
         try {
+            //这不就是乐观锁吗 无锁化-牛逼
             UNSAFE = sun.misc.Unsafe.getUnsafe();
             Class<?> k = FutureTask.class;
             stateOffset = UNSAFE.objectFieldOffset
