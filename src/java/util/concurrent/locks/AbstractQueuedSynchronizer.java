@@ -388,6 +388,7 @@ public abstract class AbstractQueuedSynchronizer
         /** waitStatus value to indicate successor's thread needs unparking */
         static final int SIGNAL    = -1;
         /** waitStatus value to indicate thread is waiting on condition */
+        //等待状态
         static final int CONDITION = -2;
         /**
          * waitStatus value to indicate the next acquireShared should
@@ -493,6 +494,7 @@ public abstract class AbstractQueuedSynchronizer
          */
         final Node predecessor() throws NullPointerException {
             Node p = prev;
+            //node的上一个节点为空，直接抛异常
             if (p == null)
                 throw new NullPointerException();
             else
@@ -584,9 +586,11 @@ public abstract class AbstractQueuedSynchronizer
         for (;;) {
             Node t = tail;
             if (t == null) { // Must initialize
+                //先初始化
                 if (compareAndSetHead(new Node()))
                     tail = head;
             } else {
+                //自旋 cas node到链表尾部
                 node.prev = t;
                 if (compareAndSetTail(t, node)) {
                     t.next = node;
@@ -608,11 +612,15 @@ public abstract class AbstractQueuedSynchronizer
         Node pred = tail;
         if (pred != null) {
             node.prev = pred;
+            //cas设置tail指针指向mode
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
+                //mode进入尾部成功，返回
                 return node;
             }
         }
+        //pred = null  还没初始化
+        //or mode没有插入链接尾部，自旋cas到尾部
         enq(node);
         return node;
     }
@@ -799,12 +807,16 @@ public abstract class AbstractQueuedSynchronizer
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
+        //上一个节点处于signal状态，上一个节点应该被唤醒，而node就应该被阻塞
             return true;
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
+             * pred节点被取消了，跳过pred
              */
+            //ppred<---pred<---node
+            //     ---->   --->
             do {
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
@@ -859,13 +871,19 @@ public abstract class AbstractQueuedSynchronizer
         try {
             boolean interrupted = false;
             for (;;) {
+                //拿node的前一个节点
                 final Node p = node.predecessor();
+                //若p是头节点，，说明自己排在队列的第一个尝试抢锁
                 if (p == head && tryAcquire(arg)) {
+                    //head指针后移
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
+                    //拿到锁了返回false
                     return interrupted;
                 }
+                //没有抢到锁,判断是否应该被阻塞，上一个节点要被通知唤醒了，node就要阻塞，
+                // 而上一个节点被取消了，node不阻塞
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -1195,8 +1213,10 @@ public abstract class AbstractQueuedSynchronizer
      *        can represent anything you like.
      */
     public final void acquire(int arg) {
+        //若没有抢到锁，则进入等待队列
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            //自己中断自己
             selfInterrupt();
     }
 
@@ -1509,6 +1529,7 @@ public abstract class AbstractQueuedSynchronizer
      *         is at the head of the queue or the queue is empty
      * @since 1.7
      */
+    //排在队列的第1个时（即当队列中没有其他线程的时候），才去抢锁，否则继续排队，这才叫“公平”！
     public final boolean hasQueuedPredecessors() {
         // The correctness of this depends on head being initialized
         // before tail and on head.next being accurate if the current
