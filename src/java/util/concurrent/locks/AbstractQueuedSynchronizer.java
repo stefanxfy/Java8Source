@@ -384,12 +384,13 @@ public abstract class AbstractQueuedSynchronizer
         static final Node EXCLUSIVE = null;
 
         /** waitStatus value to indicate thread has cancelled */
+        //取消
         static final int CANCELLED =  1;
         /** waitStatus value to indicate successor's thread needs unparking */
-        //这个值  后继节点需要被唤醒
+        //这个值当前节点需要被唤醒，后继节点会被阻塞，除非当前节点releases or cancels.
         static final int SIGNAL    = -1;
         /** waitStatus value to indicate thread is waiting on condition */
-        //线程正在等待状态
+        //线程正在等待状态  这个状态只在condition 里修改
         static final int CONDITION = -2;
         /**
          * waitStatus value to indicate the next acquireShared should
@@ -824,7 +825,7 @@ public abstract class AbstractQueuedSynchronizer
             } while (pred.waitStatus > 0);
             pred.next = node;
         } else {
-            /*
+            /* 0 -3
              * waitStatus must be 0 or PROPAGATE.  Indicate that we
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
@@ -885,7 +886,7 @@ public abstract class AbstractQueuedSynchronizer
                     return interrupted;
                 }
                 //没有抢到锁,判断是否应该被阻塞，上一个节点要被通知唤醒了，node就要阻塞，
-                // 而上一个节点被取消了，node不阻塞
+                // 其他情况，node不阻塞
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -1284,7 +1285,9 @@ public abstract class AbstractQueuedSynchronizer
         if (tryRelease(arg)) {
             Node h = head;
             if (h != null && h.waitStatus != 0)
-                //唤醒后继节点
+                //唤醒后继节点，
+                //重点，signal 没有唤醒，只是放入aqs,是需要上一个节点释放锁后，才唤醒后继节点
+                //牛逼！！！
                 unparkSuccessor(h);
             return true;
         }
@@ -1716,7 +1719,7 @@ public abstract class AbstractQueuedSynchronizer
         //入aqs同步队列
         Node p = enq(node);
         int ws = p.waitStatus;
-        //???/ 前继节点 ws > 0代表取消 or 设置SIGNAL 失败，唤醒node节点的线程
+        //前继节点 ws > 0代表取消 or 设置SIGNAL 失败，唤醒node节点的线程
         if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
             LockSupport.unpark(node.thread);
         return true;
@@ -1890,6 +1893,9 @@ public abstract class AbstractQueuedSynchronizer
             }
             Node node = new Node(Thread.currentThread(), Node.CONDITION);
             if (t == null)
+                //空的  firstWaiter和 lastWaiter都指向 node
+                // firstWaiter=lastWaiter=null 是空
+                // firstWaiter=lastWaiter!=null 说明只有一个节点
                 firstWaiter = node;
             else
                 t.nextWaiter = node;
@@ -1907,10 +1913,12 @@ public abstract class AbstractQueuedSynchronizer
         private void doSignal(Node first) {
             do {
                 if ( (firstWaiter = first.nextWaiter) == null)
-                    lastWaiter = null;
+                    lastWaiter = null;//等待队列空的 无需唤醒
+
                 first.nextWaiter = null;
-                //first ！= null，这里的唤醒只是将first放入aqs队列的尾部，并不会unpark
-                //除非前继节点被取消或者signal状态设置失败
+                //first ！= null，这里的唤醒只是将first取出等待队列，放入aqs队列的尾部，
+                // 并不会unpark
+                //除非aqs前继节点被取消或者signal状态设置失败，会直接唤醒first节点的线程
             } while (!transferForSignal(first) &&
                      (first = firstWaiter) != null);
         }
@@ -2079,7 +2087,7 @@ public abstract class AbstractQueuedSynchronizer
                 throw new InterruptedException();
             //1.放入condition队列-尾
             Node node = addConditionWaiter();
-            //2.释放锁
+            //2.释放所有锁 state--->0
             int savedState = fullyRelease(node);
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
@@ -2089,9 +2097,9 @@ public abstract class AbstractQueuedSynchronizer
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
             }
-            //被阻断或者被唤醒，重新拿锁
+            //acquireQueued  返回false为拿锁成功，中断，返回true是阻塞被唤醒或者被中断
             if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
-                //???
+                //不是唤醒前被中断  那就是唤醒后被中断
                 interruptMode = REINTERRUPT;
             if (node.nextWaiter != null) // clean up if cancelled
                 unlinkCancelledWaiters();
