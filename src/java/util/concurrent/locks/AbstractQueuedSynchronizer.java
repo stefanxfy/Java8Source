@@ -387,7 +387,7 @@ public abstract class AbstractQueuedSynchronizer
         //取消
         static final int CANCELLED =  1;
         /** waitStatus value to indicate successor's thread needs unparking */
-        //这个值当前节点需要被唤醒，后继节点会被阻塞，除非当前节点releases or cancels.
+        //后继节点的线程需要被唤醒
         static final int SIGNAL    = -1;
         /** waitStatus value to indicate thread is waiting on condition */
         //线程正在等待状态  这个状态只在condition 里修改
@@ -642,7 +642,7 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Wakes up node's successor, if one exists.
-     * 唤醒后继节点
+     * 唤醒节点
      * @param node the node
      */
     private void unparkSuccessor(Node node) {
@@ -661,7 +661,7 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
-        //唤醒后继节点，若为空，从tail往后遍历找到一个正常的节点
+        //唤醒后继节点的线程，若为空，从tail往后遍历找到一个正常的节点
         Node s = node.next;
         if (s == null || s.waitStatus > 0) {
             s = null;
@@ -697,6 +697,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (ws == Node.SIGNAL) {
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    //唤醒后继节点的线程
                     unparkSuccessor(h);
                 }
                 else if (ws == 0 &&
@@ -810,7 +811,6 @@ public abstract class AbstractQueuedSynchronizer
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
-        //上一个节点处于signal状态，上一个节点应该被唤醒，而node就应该被阻塞
             return true;
         if (ws > 0) {
             /*
@@ -968,6 +968,7 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      */
     private void doAcquireShared(int arg) {
+        //创建一个读节点，并入队列
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
@@ -975,8 +976,11 @@ public abstract class AbstractQueuedSynchronizer
             for (;;) {
                 final Node p = node.predecessor();
                 if (p == head) {
+                    //如果前继节点是head，则尝试获取锁
                     int r = tryAcquireShared(arg);
                     if (r >= 0) {
+                        //获取锁成功，node出队列，若node.waitStatus = Node.SIGNAL
+                        //唤醒其后继节点的线程
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -985,6 +989,8 @@ public abstract class AbstractQueuedSynchronizer
                         return;
                     }
                 }
+                //p不是头结点 or 获取锁失败
+                // node
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -1286,7 +1292,7 @@ public abstract class AbstractQueuedSynchronizer
             Node h = head;
             if (h != null && h.waitStatus != 0)
                 //唤醒后继节点，
-                //重点，signal 没有唤醒，只是放入aqs,是需要上一个节点释放锁后，才唤醒后继节点
+                //重点，signal() 没有唤醒，只是放入aqs,是需要上一个节点释放锁后，才唤醒后继节点
                 //牛逼！！！
                 unparkSuccessor(h);
             return true;
@@ -1485,6 +1491,10 @@ public abstract class AbstractQueuedSynchronizer
      * is not the first queued thread.  Used only as a heuristic in
      * ReentrantReadWriteLock.
      */
+    /**
+     * 判断qas队列的第一个元素是否是独占线程（写线程）
+     * @return
+     */
     final boolean apparentlyFirstQueuedIsExclusive() {
         Node h, s;
         return (h = head) != null &&
@@ -1536,11 +1546,11 @@ public abstract class AbstractQueuedSynchronizer
      *         is at the head of the queue or the queue is empty
      * @since 1.7
      */
-    //排在队列的第1个时（即当队列中没有其他线程的时候），才去抢锁，否则继续排队，这才叫“公平”！
+    //排在队列的第1个时，才去抢锁，否则继续排队，这才叫“公平”！
     public final boolean hasQueuedPredecessors() {
         // The correctness of this depends on head being initialized
         // before tail and on head.next being accurate if the current
-        // thread is first in queue.  看不太懂
+        // thread is first in queue.
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
