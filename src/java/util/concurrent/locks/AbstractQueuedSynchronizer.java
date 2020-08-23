@@ -695,12 +695,14 @@ public abstract class AbstractQueuedSynchronizer
             if (h != null && h != tail) {
                 int ws = h.waitStatus;
                 if (ws == Node.SIGNAL) {
+                    //SIGNAL --> 0
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
                     //唤醒后继节点的线程
                     unparkSuccessor(h);
                 }
                 else if (ws == 0 &&
+                        //0 --> PROPAGATE
                          !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
             }
@@ -738,6 +740,7 @@ public abstract class AbstractQueuedSynchronizer
          */
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
+            //唤醒后继节点
             Node s = node.next;
             if (s == null || s.isShared())
                 doReleaseShared();
@@ -989,8 +992,10 @@ public abstract class AbstractQueuedSynchronizer
                         return;
                     }
                 }
-                //p不是头结点 or 获取锁失败
-                // node
+                /**
+                 * p不是头结点 or 获取锁失败，判断是否应该被阻塞
+                 * 前继节点的ws = SIGNAL 时应该被阻塞
+                 */
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -1291,7 +1296,7 @@ public abstract class AbstractQueuedSynchronizer
         if (tryRelease(arg)) {
             Node h = head;
             if (h != null && h.waitStatus != 0)
-                //唤醒后继节点，
+                //释放锁成功后唤醒后继节点，
                 //重点，signal() 没有唤醒，只是放入aqs,是需要上一个节点释放锁后，才唤醒后继节点
                 //牛逼！！！
                 unparkSuccessor(h);
@@ -1729,8 +1734,10 @@ public abstract class AbstractQueuedSynchronizer
         //入aqs同步队列
         Node p = enq(node);
         int ws = p.waitStatus;
-        //前继节点 ws > 0代表取消 or 设置SIGNAL 失败，唤醒node节点的线程
+        //前继节点 ws > 0代表取消
+        //设置前继节点的ws为SIGNAL，预示 其后继节点要被唤醒
         if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+            //前继节点取消  or  ws设置 SIGNAL 失败，将立即唤醒node节点的线程
             LockSupport.unpark(node.thread);
         return true;
     }

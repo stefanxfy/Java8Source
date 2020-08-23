@@ -400,7 +400,7 @@ public class ReentrantReadWriteLock
             if (c != 0) { //c!=0 说明有读线程或者写线程持有锁
                 // (Note: if c != 0 and w == 0 then shared count != 0)
                 //w == 0 说明锁被读线程持有，w==0直接返回，抢锁失败，
-                //w != 0 判断当前线程是否是持有锁，不是直接返回false，抢锁失败
+                //w != 0 判断当前线程是否持有锁，不是直接返回false，抢锁失败
                 if (w == 0 || current != getExclusiveOwnerThread())
                     return false;
                 //w!=0 && current == getExclusiveOwnerThread 当前线程重入
@@ -424,6 +424,11 @@ public class ReentrantReadWriteLock
         protected final boolean tryReleaseShared(int unused) {
             Thread current = Thread.currentThread();
             if (firstReader == current) {
+                /**
+                 * 持有读锁的第一个线程是当前线程，且重入次数为1，释放锁将firstReader=null
+                 * 否则 firstReaderHoldCount-1
+                 */
+
                 // assert firstReaderHoldCount > 0;
                 if (firstReaderHoldCount == 1)
                     firstReader = null;
@@ -442,6 +447,7 @@ public class ReentrantReadWriteLock
                 --rh.count;
             }
             for (;;) {
+                //cas  状态  ？？？
                 int c = getState();
                 int nextc = c - SHARED_UNIT;
                 if (compareAndSetState(c, nextc))
