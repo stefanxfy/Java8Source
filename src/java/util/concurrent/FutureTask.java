@@ -195,7 +195,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
     }
 
     /**
-     * //会一直阻塞到计算结束
+     * 会一直阻塞到计算结束
      * @throws CancellationException {@inheritDoc}
      */
     public V get() throws InterruptedException, ExecutionException {
@@ -420,7 +420,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 break;
             }
         }
-
+        //钩子函数
         done();
 
         callable = null;        // to reduce footprint
@@ -490,7 +490,10 @@ public class FutureTask<V> implements RunnableFuture<V> {
      * expect lists to be long enough to outweigh higher-overhead
      * schemes.
      */
-    //看不懂这个删除
+    /**
+     * 栈，node.thread=null的节点会被删除
+     * @param node
+     */
     private void removeWaiter(WaitNode node) {
         if (node != null) {
             node.thread = null;
