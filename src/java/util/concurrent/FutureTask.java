@@ -295,10 +295,11 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 } catch (Throwable ex) {
                     result = null;
                     ran = false;
+                    //设置异常给outcome
                     setException(ex);
                 }
                 if (ran)
-                    //运行正常完成，设置结果
+                    //运行正常完成，设置结果给outcome
                     set(result);
             }
         } finally {
@@ -310,7 +311,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
             // leaked interrupts
             int s = state;
             if (s >= INTERRUPTING)
-                //如果状态是被打断了，
+                //如果状态正在打断，让出cpu
                 handlePossibleCancellationInterrupt(s);
         }
     }
@@ -341,6 +342,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
                     //所以传进来的任务run里需要自己try-catch
                     ran = true;
                 } catch (Throwable ex) {
+                    //设置异常给outcome
                     setException(ex);
                 }
             }
@@ -438,7 +440,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
         final long deadline = timed ? System.nanoTime() + nanos : 0L;
         WaitNode q = null;
         boolean queued = false;
-        //循环阻塞，循环终止- 阻塞时间到，或者被唤醒，然后返回当前的状态
+        //阻塞时间到，或者被唤醒，然后返回当前的状态
         for (;;) {
             if (Thread.interrupted()) {
                 removeWaiter(q);
@@ -450,7 +452,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 //完成
                 if (q != null)
                     q.thread = null;
-                //返回结果
+                //返回结果状态
                 return s;
             }
             else if (s == COMPLETING) // cannot time out yet
@@ -460,14 +462,14 @@ public class FutureTask<V> implements RunnableFuture<V> {
                 //NEW 状态，新建一个WaitNode
                 q = new WaitNode();
             else if (!queued)
-                //cas入队列
+                //cas入栈
                 queued = UNSAFE.compareAndSwapObject(this, waitersOffset,
                                                      q.next = waiters, q);
             else if (timed) {
                 //需要时间阻塞
                 nanos = deadline - System.nanoTime();
                 if (nanos <= 0L) {
-                    //不需要等待，删除等待线程
+                    //不需要等待，删除等待节点
                     removeWaiter(q);
                     return state;
                 }
