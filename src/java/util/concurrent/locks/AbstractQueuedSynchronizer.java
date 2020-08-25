@@ -377,10 +377,13 @@ public abstract class AbstractQueuedSynchronizer
      * expert group, for helpful ideas, discussions, and critiques
      * on the design of this class.
      */
+    //双向队列
     static final class Node {
         /** Marker to indicate a node is waiting in shared mode */
+        //共享一个节点对象
         static final Node SHARED = new Node();
         /** Marker to indicate a node is waiting in exclusive mode */
+        //独占节点
         static final Node EXCLUSIVE = null;
 
         /** waitStatus value to indicate thread has cancelled */
@@ -478,6 +481,7 @@ public abstract class AbstractQueuedSynchronizer
          * we save a field by using special value to indicate shared
          * mode.
          */
+        //有什么作用，只会为了记录当前的node是独占node还是共享node
         Node nextWaiter;
 
         /**
@@ -494,6 +498,7 @@ public abstract class AbstractQueuedSynchronizer
          *
          * @return the predecessor of this node
          */
+        //获取前继节点
         final Node predecessor() throws NullPointerException {
             Node p = prev;
             //node的上一个节点为空，直接抛异常
@@ -584,6 +589,7 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node to insert
      * @return node's predecessor
      */
+    //cas自旋入队列->尾部
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
@@ -642,7 +648,7 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Wakes up node's successor, if one exists.
-     * 唤醒节点
+     * 唤醒后继节点
      * @param node the node
      */
     private void unparkSuccessor(Node node) {
