@@ -399,7 +399,7 @@ public abstract class AbstractQueuedSynchronizer
          * waitStatus value to indicate the next acquireShared should
          * unconditionally propagate
          */
-        static final int PROPAGATE = -3;  //这个状态不太懂
+        static final int PROPAGATE = -3;
 
         /**
          * Status field, taking on only the values:
@@ -481,7 +481,7 @@ public abstract class AbstractQueuedSynchronizer
          * we save a field by using special value to indicate shared
          * mode.
          */
-        //有什么作用，只会为了记录当前的node是独占node还是共享node
+        //有什么作用？后来跳出源码才发现，只是为了记录当前的node是独占node还是共享node
         Node nextWaiter;
 
         /**
@@ -619,8 +619,9 @@ public abstract class AbstractQueuedSynchronizer
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
         if (pred != null) {
+            //设置node节点的上一个节点是tail
             node.prev = pred;
-            //cas设置tail指针指向mode
+            //cas设置tail指针指向node
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
                 //mode进入尾部成功，返回
@@ -819,6 +820,8 @@ public abstract class AbstractQueuedSynchronizer
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
+             * node拿锁失败，前继节点的状态是SIGNAL，node节点可以放心的阻塞，
+             * 因为下次会被唤醒
              */
             return true;
         if (ws > 0) {
@@ -887,14 +890,14 @@ public abstract class AbstractQueuedSynchronizer
                 final Node p = node.predecessor();
                 //若p是头节点，，说明自己排在队列的第一个尝试抢锁
                 if (p == head && tryAcquire(arg)) {
-                    //head指针后移
+                    //node成为新的head
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     //拿到锁了返回false
                     return interrupted;
                 }
-                //没有抢到锁,判断是否应该被阻塞，上一个节点要被通知唤醒了，node就要阻塞，
+                //没有抢到锁,判断是否应该被阻塞，上一个节点waitStatus=SIGNAL，node就阻塞，因为下次会被唤醒
                 // 其他情况，node不阻塞
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
