@@ -749,9 +749,11 @@ public abstract class AbstractQueuedSynchronizer
          * racing acquires/releases, so most need signals now or soon
          * anyway.
          */
+        // propagate > 0 获取锁成功
+        // propagate < 0 获取锁失败，队列不为空，h.waitStatus < 0
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
-            //唤醒后继节点
+            //唤醒后继共享节点
             Node s = node.next;
             if (s == null || s.isShared())
                 doReleaseShared();
@@ -1343,7 +1345,9 @@ public abstract class AbstractQueuedSynchronizer
      *        and can represent anything you like.
      */
     public final void acquireShared(int arg) {
+        //tryAcquireShared 返回-1  获取锁失败，1获取锁成功
         if (tryAcquireShared(arg) < 0)
+            //获取锁失败
             doAcquireShared(arg);
     }
 
@@ -1577,7 +1581,9 @@ public abstract class AbstractQueuedSynchronizer
      *         is at the head of the queue or the queue is empty
      * @since 1.7
      */
-    //排在队列的第1个时，才去抢锁，否则继续排队，这才叫“公平”！
+    /**
+     * @return true 队列中有其他节点在等待
+     */
     public final boolean hasQueuedPredecessors() {
         // The correctness of this depends on head being initialized
         // before tail and on head.next being accurate if the current
@@ -1697,7 +1703,7 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @return true if is reacquiring
      * 是否在AQS的同步队列里，初始的时候，Node只在Condition的队列里，而不在AQS的队列里。
-     * 但执行notity操作的时候，会放进AQS的同步队列。
+     * 但执行signal操作后，会放进AQS的同步队列。
      */
     final boolean isOnSyncQueue(Node node) {
         if (node.waitStatus == Node.CONDITION || node.prev == null)
@@ -1912,8 +1918,10 @@ public abstract class AbstractQueuedSynchronizer
     public class ConditionObject implements Condition, java.io.Serializable {
         private static final long serialVersionUID = 1173984872572414699L;
         /** First node of condition queue. */
+        //相当于head
         private transient Node firstWaiter;
         /** Last node of condition queue. */
+        //相当于tail
         private transient Node lastWaiter;
 
         /**
@@ -2086,7 +2094,7 @@ public abstract class AbstractQueuedSynchronizer
         //唤醒后被中断
         private static final int REINTERRUPT =  1;
         /** Mode meaning to throw InterruptedException on exit from wait */
-        //唤醒前取消中断
+        //唤醒前中断
         private static final int THROW_IE    = -1;
 
         /**
@@ -2140,7 +2148,7 @@ public abstract class AbstractQueuedSynchronizer
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
             }
-            //acquireQueued  返回false为拿锁成功，中断，返回true是阻塞被唤醒或者被中断
+            //acquireQueued  返回false为拿锁成功，线程中断返回true
             if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
                 //不是唤醒前被中断  那就是唤醒后被中断
                 interruptMode = REINTERRUPT;
@@ -2173,11 +2181,13 @@ public abstract class AbstractQueuedSynchronizer
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
                 if (nanosTimeout <= 0L) {
+                    //时间到，自动唤醒，放入aqs队列
                     transferAfterCancelledWait(node);
                     break;
                 }
                 if (nanosTimeout >= spinForTimeoutThreshold)
                     LockSupport.parkNanos(this, nanosTimeout);
+                //响应中断
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
                 nanosTimeout = deadline - System.nanoTime();
@@ -2216,6 +2226,7 @@ public abstract class AbstractQueuedSynchronizer
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
                 if (System.currentTimeMillis() > abstime) {
+                    //时间到，自动唤醒，放入aqs队列
                     timedout = transferAfterCancelledWait(node);
                     break;
                 }
@@ -2258,6 +2269,7 @@ public abstract class AbstractQueuedSynchronizer
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
                 if (nanosTimeout <= 0L) {
+                    //时间到，自动唤醒，放入aqs队列
                     timedout = transferAfterCancelledWait(node);
                     break;
                 }

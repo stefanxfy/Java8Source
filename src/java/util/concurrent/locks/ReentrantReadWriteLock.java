@@ -495,7 +495,7 @@ public class ReentrantReadWriteLock
                 if (r == 0) {  //r==0说明是第一个拿到读锁的读线程
                     firstReader = current;
                     firstReaderHoldCount = 1;
-                } else if (firstReader == current) { //第一个持有读锁的线程时当前线程，为重入
+                } else if (firstReader == current) { //第一个持有读锁的线程是当前线程，记录重入次数
                     firstReaderHoldCount++;
                 } else {
                     //HoldCounter 记录线程重入锁的次数
@@ -514,7 +514,6 @@ public class ReentrantReadWriteLock
             }
             /**
              * 这一步的主要作用是因为compareAndSetState(c, c + SHARED_UNIT)  失败后 自旋尝试获取锁的处理
-             *  有可能应该被阻塞，若不阻塞就尝试获取锁
              */
             return fullTryAcquireShared(current);
         }
@@ -534,6 +533,7 @@ public class ReentrantReadWriteLock
             for (;;) {
                 int c = getState();
                 if (exclusiveCount(c) != 0) {
+                    //写锁有线程持有，但是持锁的线程不是当前线程，返回-1，结束自旋。
                     if (getExclusiveOwnerThread() != current)
                         return -1;
                     // else we hold the exclusive lock; blocking here
@@ -554,12 +554,16 @@ public class ReentrantReadWriteLock
                             }
                         }
                         if (rh.count == 0)
+                            //当前线程不持有锁，直接返回-1
                             return -1;
                     }
                 }
+                //读线程不应该阻塞，判断state
                 if (sharedCount(c) == MAX_COUNT)
                     throw new Error("Maximum lock count exceeded");
+                //获取读锁
                 if (compareAndSetState(c, c + SHARED_UNIT)) {
+                    //下面就是记录重入的机制了
                     if (sharedCount(c) == 0) {
                         firstReader = current;
                         firstReaderHoldCount = 1;
@@ -702,7 +706,8 @@ public class ReentrantReadWriteLock
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = -8159625535654395037L;
         final boolean writerShouldBlock() {
-            return false; // writers can always barge 写线程在抢锁之前永远不会阻塞-非公平锁
+            //写线程在抢锁之前永远不会阻塞-非公平锁
+            return false; // writers can always barge
         }
         final boolean readerShouldBlock() {
             /* As a heuristic to avoid indefinite writer starvation,
@@ -723,9 +728,20 @@ public class ReentrantReadWriteLock
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -2274990926593161451L;
+
+        /**
+         * 同步队列中排在第一个实质性节点（head.next）不是当前线程时阻塞，
+         * 即同步队列中以后其他节点在自己前面阻塞，此时当前写线程阻塞
+         * @return
+         */
         final boolean writerShouldBlock() {
             return hasQueuedPredecessors();
         }
+        /**
+         * 同步队列中排在第一个实质性节点（head.next）不是当前线程时阻塞，
+         * 即同步队列中以后其他节点在自己前面阻塞，此时当前读线程阻塞
+         * @return
+         */
         final boolean readerShouldBlock() {
             return hasQueuedPredecessors();
         }
