@@ -117,6 +117,7 @@ abstract class Striped64 extends Number {
      * JVM intrinsics note: It would be possible to use a release-only
      * form of CAS here, if it were provided.
      */
+    //伪共享问题和缓存行填充
     @sun.misc.Contended static final class Cell {
         volatile long value;
         Cell(long x) { value = x; }
