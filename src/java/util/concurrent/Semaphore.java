@@ -176,19 +176,27 @@ public class Semaphore implements java.io.Serializable {
 
         final int nonfairTryAcquireShared(int acquires) {
             for (;;) {
+                //获取可用资源许可量
                 int available = getState();
+                //计算可用资源许可剩余量
                 int remaining = available - acquires;
+                //remaining <0 说明资源许可耗尽
+                //remaining >= 0 可继续获取资源许可cas
                 if (remaining < 0 ||
                     compareAndSetState(available, remaining))
+                    //返回剩余许可量
                     return remaining;
             }
         }
 
         protected final boolean tryReleaseShared(int releases) {
             for (;;) {
+                //获取当前资源许可量
                 int current = getState();
+                //当前许可量+释放的许可量
                 int next = current + releases;
                 if (next < current) // overflow
+                    //溢出了
                     throw new Error("Maximum permit count exceeded");
                 if (compareAndSetState(current, next))
                     return true;
@@ -242,8 +250,10 @@ public class Semaphore implements java.io.Serializable {
 
         protected int tryAcquireShared(int acquires) {
             for (;;) {
+                //判断同步队列中是否有线程在阻塞，有则获取失败返回-1
                 if (hasQueuedPredecessors())
                     return -1;
+                //同步队列中没有线程在阻塞等待，则可以继续获取许可，同非公平下的获取许可
                 int available = getState();
                 int remaining = available - acquires;
                 if (remaining < 0 ||

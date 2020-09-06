@@ -718,6 +718,7 @@ public abstract class AbstractQueuedSynchronizer
              * while we are doing this
              */
             if (h == head)                   // loop if head changed
+                //head没有变则break
                 break;
         }
     }
@@ -751,9 +752,13 @@ public abstract class AbstractQueuedSynchronizer
          */
         // propagate > 0 获取锁成功
         // propagate < 0 获取锁失败，队列不为空，h.waitStatus < 0
+        //先判断旧head  再判断新head
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
             //唤醒后继共享节点
+            //假设propagate=0，假设没有-3，也就不会进入这里此时B节点还没有执行shouldParkAfterFailAcquire
+            // head(ws=0)-->B
+            //head(ws=0---3)-->B
             Node s = node.next;
             if (s == null || s.isShared())
                 doReleaseShared();
@@ -1009,6 +1014,9 @@ public abstract class AbstractQueuedSynchronizer
                 if (p == head) {
                     //如果前继节点是head，则尝试获取锁
                     int r = tryAcquireShared(arg);
+                    //tryAcquireShared = 0 ?
+                    // ReetrantReadWriteLock中实现的只能等于1or-1，基本没有资源概念的限制
+                    //Semapgore中tryAcquireShared返回值是资源剩余量，可以为0.
                     if (r >= 0) {
                         //获取锁成功，node出队列，若node.waitStatus = Node.SIGNAL
                         //唤醒其后继节点的线程
@@ -1040,10 +1048,12 @@ public abstract class AbstractQueuedSynchronizer
      */
     private void doAcquireSharedInterruptibly(int arg)
         throws InterruptedException {
+        //新建节点入队列
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
             for (;;) {
+                //node节点的前驱节点是head，获取锁
                 final Node p = node.predecessor();
                 if (p == head) {
                     int r = tryAcquireShared(arg);
@@ -1056,6 +1066,7 @@ public abstract class AbstractQueuedSynchronizer
                 }
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
+                    //在阻塞期间因为中断而唤醒，抛异常
                     throw new InterruptedException();
             }
         } finally {
@@ -1280,6 +1291,7 @@ public abstract class AbstractQueuedSynchronizer
     public final void acquireInterruptibly(int arg)
             throws InterruptedException {
         if (Thread.interrupted())
+            //有被中断  抛异常
             throw new InterruptedException();
         if (!tryAcquire(arg))
             doAcquireInterruptibly(arg);
@@ -1367,8 +1379,10 @@ public abstract class AbstractQueuedSynchronizer
     public final void acquireSharedInterruptibly(int arg)
             throws InterruptedException {
         if (Thread.interrupted())
+            //被打断 抛出异常
             throw new InterruptedException();
         if (tryAcquireShared(arg) < 0)
+            //获取锁失败
             doAcquireSharedInterruptibly(arg);
     }
 
@@ -1407,6 +1421,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final boolean releaseShared(int arg) {
         if (tryReleaseShared(arg)) {
+            //读锁锁释放才唤醒后继节点
             doReleaseShared();
             return true;
         }
