@@ -845,9 +845,6 @@ public abstract class AbstractQueuedSynchronizer
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
              * pred节点被取消了，跳过pred
-             */
-            //ppred<---pred<---node
-            //     ---->   --->
             do {
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
@@ -1014,12 +1011,8 @@ public abstract class AbstractQueuedSynchronizer
                 if (p == head) {
                     //如果前继节点是head，则尝试获取锁
                     int r = tryAcquireShared(arg);
-                    //tryAcquireShared = 0 ?
-                    // ReetrantReadWriteLock中实现的只能等于1or-1，基本没有资源概念的限制
-                    //Semapgore中tryAcquireShared返回值是资源剩余量，可以为0.
                     if (r >= 0) {
-                        //获取锁成功，node出队列，若node.waitStatus = Node.SIGNAL
-                        //唤醒其后继节点的线程
+                        //获取锁成功，设置新head和共享传播（唤醒下一个共享节点）
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1357,9 +1350,9 @@ public abstract class AbstractQueuedSynchronizer
      *        and can represent anything you like.
      */
     public final void acquireShared(int arg) {
-        //tryAcquireShared 返回-1  获取锁失败，1获取锁成功
+        //tryAcquireShared 返回-1获取锁失败，返回值大于1或者0获取锁成功
         if (tryAcquireShared(arg) < 0)
-            //获取锁失败
+            //获取锁失败，进入队列操作
             doAcquireShared(arg);
     }
 
