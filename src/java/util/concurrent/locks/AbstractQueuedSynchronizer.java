@@ -986,6 +986,8 @@ public abstract class AbstractQueuedSynchronizer
                     return false;
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
+                    //自旋1000纳秒，还没有获取锁就休眠一段时间。1毫秒=1*1000*1000纳秒
+                    //所以这个自旋阈值是很短的
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
                     throw new InterruptedException();
