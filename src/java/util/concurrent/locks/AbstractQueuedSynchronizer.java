@@ -935,10 +935,12 @@ public abstract class AbstractQueuedSynchronizer
      */
     private void doAcquireInterruptibly(int arg)
         throws InterruptedException {
+        //新建node，入队列
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                //判断前驱是否是head
                 final Node p = node.predecessor();
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
@@ -946,9 +948,11 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return;
                 }
+                //1.应该阻塞，调用parkAndCheckInterrupt阻塞线程
+                //2.不应该阻塞，再给一次抢锁的机会
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
-                    //抛了异常InterruptedException
+                    //遇到中断抛了异常InterruptedException
                     throw new InterruptedException();
             }
         } finally {
@@ -968,12 +972,16 @@ public abstract class AbstractQueuedSynchronizer
     private boolean doAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
         if (nanosTimeout <= 0L)
+            //已经超时直接返回false，获取锁失败
             return false;
+        //计算deadline
         final long deadline = System.nanoTime() + nanosTimeout;
+        //入队列
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                //判断前驱是否是head
                 final Node p = node.predecessor();
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
@@ -982,14 +990,18 @@ public abstract class AbstractQueuedSynchronizer
                     return true;
                 }
                 nanosTimeout = deadline - System.nanoTime();
+                //超时返回false，获取锁失败
                 if (nanosTimeout <= 0L)
                     return false;
+                //1.应该阻塞，调用parkAndCheckInterrupt阻塞线程
+                //2.不应该阻塞，再给一次抢锁的机会
+                //3.自旋1000纳秒，还没有获取锁就休眠一段时间。1毫秒=1*1000*1000纳秒
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
-                    //自旋1000纳秒，还没有获取锁就休眠一段时间。1毫秒=1*1000*1000纳秒
-                    //所以这个自旋阈值是很短的
+                    //阻塞一段时间
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
+                    //响应中断
                     throw new InterruptedException();
             }
         } finally {
@@ -1287,6 +1299,7 @@ public abstract class AbstractQueuedSynchronizer
             throws InterruptedException {
         if (Thread.interrupted())
             //有被中断  抛异常
+
             throw new InterruptedException();
         if (!tryAcquire(arg))
             doAcquireInterruptibly(arg);
