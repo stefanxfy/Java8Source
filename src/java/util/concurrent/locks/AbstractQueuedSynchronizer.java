@@ -777,6 +777,8 @@ public abstract class AbstractQueuedSynchronizer
         // Skip cancelled predecessors
         Node pred = node.prev;
         while (pred.waitStatus > 0)
+            //pred = pred.prev;
+            //node.prev = pred;
             node.prev = pred = pred.prev;
 
         // predNext is the apparent node to unsplice. CASes below will
@@ -792,14 +794,14 @@ public abstract class AbstractQueuedSynchronizer
         // If we are the tail, remove ourselves.
         //如果node在尾部，tail前移
         if (node == tail && compareAndSetTail(node, pred)) {
-            //node设置为null
+            //???
             compareAndSetNext(pred, predNext, null);
         } else {
             //node不在尾部
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
             int ws;
-            //前继节点是个正常阻塞节点
+            //前驱节点不是头结点
             if (pred != head &&
                 ((ws = pred.waitStatus) == Node.SIGNAL ||
                  (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&

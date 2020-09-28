@@ -558,7 +558,7 @@ public class ReentrantReadWriteLock
                             return -1;
                     }
                 }
-                //读线程不应该阻塞，判断state
+                //判断state
                 if (sharedCount(c) == MAX_COUNT)
                     throw new Error("Maximum lock count exceeded");
                 //获取读锁
