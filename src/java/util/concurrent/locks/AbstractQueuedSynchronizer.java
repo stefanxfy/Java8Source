@@ -674,6 +674,9 @@ public abstract class AbstractQueuedSynchronizer
             s = null;
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
+                    //这里找到的正常节点前驱不是head，则唤醒的目的就不是让其获取锁，
+                    //而是让其自旋检查下，自己的前驱是否是正常节点，不是则链接一个正常前驱，继续阻塞。
+                    //而若node的后继是一个正在被取消的节点，完成取消后会唤醒node后继的后继，因为node的后继的后继的前驱是head了。
                     s = t;
         }
         if (s != null)
@@ -816,7 +819,8 @@ public abstract class AbstractQueuedSynchronizer
                     //将node后继节点替换node节点
                     compareAndSetNext(pred, predNext, next);
             } else {
-                //node前继节点不是一个正常的节点，唤醒后继节点
+                // 如果node的前驱是个head，则唤醒node后继，
+                // node前继节点不是一个正常的节点，这里的唤醒不是为了让node后继获取锁，而是为node的后继链接一个正常的前驱
                 unparkSuccessor(node);
             }
             node.next = node; // help GC
@@ -847,9 +851,13 @@ public abstract class AbstractQueuedSynchronizer
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
              * pred节点被取消了，跳过pred
+             */
             do {
+                //pred = pred.prev;
+                //node.pred = pred;
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
+            //跳过取消节点，给node找一个正常的前驱,然后再循环一次
             pred.next = node;
         } else {
             /* 0 -3
