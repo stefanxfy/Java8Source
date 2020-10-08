@@ -668,15 +668,13 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
-        //唤醒后继节点的线程，若为空，从tail往后遍历找到一个正常的节点
+        //唤醒后继节点的线程，若为空，从tail往后遍历找一个距离head最近的正常的节点
         Node s = node.next;
         if (s == null || s.waitStatus > 0) {
             s = null;
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
-                    //这里找到的正常节点前驱不是head，则唤醒的目的就不是让其获取锁，
-                    //而是让其自旋检查下，自己的前驱是否是正常节点，不是则链接一个正常前驱，继续阻塞。
-                    //而若node的后继是一个正在被取消的节点，完成取消后会唤醒node后继的后继，因为node的后继的后继的前驱是head了。
+                    //这里找到的正常节点，并没有返回，而是继续往前找
                     s = t;
         }
         if (s != null)
