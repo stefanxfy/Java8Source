@@ -1,6 +1,5 @@
 # Java8Source
 
-[TOC]
 
 ## 介绍
 
