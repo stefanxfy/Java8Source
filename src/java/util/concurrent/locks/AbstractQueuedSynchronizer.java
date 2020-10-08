@@ -1121,10 +1121,14 @@ public abstract class AbstractQueuedSynchronizer
                 nanosTimeout = deadline - System.nanoTime();
                 if (nanosTimeout <= 0L)
                     return false;
+                //判断是否应该阻塞
+                //在阈值spinForTimeoutThreshold范围自旋一定时长，
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
+                    //阻塞一定时间，时间到可自动唤醒
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
+                    //线程如若发生中断，响应中断抛出异常
                     throw new InterruptedException();
             }
         } finally {
@@ -1309,7 +1313,6 @@ public abstract class AbstractQueuedSynchronizer
             throws InterruptedException {
         if (Thread.interrupted())
             //有被中断  抛异常
-
             throw new InterruptedException();
         if (!tryAcquire(arg))
             doAcquireInterruptibly(arg);
@@ -1439,7 +1442,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final boolean releaseShared(int arg) {
         if (tryReleaseShared(arg)) {
-            //读锁锁释放才唤醒后继节点
+            //读锁释放才唤醒后继节点
             doReleaseShared();
             return true;
         }
@@ -1840,14 +1843,20 @@ public abstract class AbstractQueuedSynchronizer
     final int fullyRelease(Node node) {
         boolean failed = true;
         try {
+            //获取重入次数
             int savedState = getState();
+            //完全释放锁
             if (release(savedState)) {
                 failed = false;
+                //返回重入次数
                 return savedState;
             } else {
+                //释放锁失败，直接抛出异常
                 throw new IllegalMonitorStateException();
             }
         } finally {
+            //如果完全释放锁失败，则将node节点状态设置为取消。
+            //所以就有了剔除codition队列取消节点的操作
             if (failed)
                 node.waitStatus = Node.CANCELLED;
         }
@@ -2045,12 +2054,14 @@ public abstract class AbstractQueuedSynchronizer
                     if (trail == null)
                         firstWaiter = next;
                     else
+                        //trail指向的是上一个正常的节点
                         trail.nextWaiter = next;
                     if (next == null)
                         lastWaiter = trail;
                 }
                 else
                     trail = t;
+                //从头遍历
                 t = next;
             }
         }
@@ -2171,7 +2182,8 @@ public abstract class AbstractQueuedSynchronizer
                 throw new InterruptedException();
             //1.放入condition队列-尾
             Node node = addConditionWaiter();
-            //2.释放所有锁 state--->0
+            //2.释放所有锁 state--->0，
+            // 完全释放锁失败抛出异常不会继续往下走
             int savedState = fullyRelease(node);
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
@@ -2263,6 +2275,7 @@ public abstract class AbstractQueuedSynchronizer
                     timedout = transferAfterCancelledWait(node);
                     break;
                 }
+                //abstime绝对时长，是个时间戳
                 LockSupport.parkUntil(this, abstime);
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
@@ -2306,6 +2319,7 @@ public abstract class AbstractQueuedSynchronizer
                     timedout = transferAfterCancelledWait(node);
                     break;
                 }
+                //自旋一定时间1000纳秒后，阻塞
                 if (nanosTimeout >= spinForTimeoutThreshold)
                     LockSupport.parkNanos(this, nanosTimeout);
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
