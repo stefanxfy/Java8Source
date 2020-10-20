@@ -378,20 +378,41 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * that workerCount is 0 (which sometimes entails a recheck -- see
      * below).
      */
+    //一个ctl 表示两种含义，高3位为runState，低29为workerCount
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
     private static final int COUNT_BITS = Integer.SIZE - 3;
+    //536870911
+    //0001 1111 1111 1111 1111 1111 1111 1111
     private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
 
     // runState is stored in the high-order bits
+    //-536870912
+    //111 0 0000 0000 0000 0000 0000 0000 0000
     private static final int RUNNING    = -1 << COUNT_BITS;
+    //0
+    //000 0 0000 0000 0000 0000 0000 0000 0000
     private static final int SHUTDOWN   =  0 << COUNT_BITS;
+    //536870912
+    //001 0 0000 0000 0000 0000 0000 0000 0000
     private static final int STOP       =  1 << COUNT_BITS;
+    //1073741824
+    //010 0 0000 0000 0000 0000 0000 0000 0000
     private static final int TIDYING    =  2 << COUNT_BITS;
+    //1610612736
+    //011 0 0000 0000 0000 0000 0000 0000 0000
     private static final int TERMINATED =  3 << COUNT_BITS;
 
     // Packing and unpacking ctl
+    //从变量ctl中解析出runState
+    //先将CAPACITY做按位非操作，即~n = - ( n+1 )，就是 RUNNING
+    //然后再做按位与，可得出高3位
     private static int runStateOf(int c)     { return c & ~CAPACITY; }
+    //从变量ctl中解析出workerCount
+    //对CAPACITY按位与，可得出低29位
+    //1 & 1 = 1，1 & 0 = 0，0 & 1 = 0，0 & 0 = 0
     private static int workerCountOf(int c)  { return c & CAPACITY; }
+    //将rs和wc转为二进制 再进行按位或计算，位上只要有1就是该位就是1
+    // 1 & 1 = 1，1 & 0 = 1，0 & 1 = 1，0 & 0 = 0
     private static int ctlOf(int rs, int wc) { return rs | wc; }
 
     /*
@@ -445,6 +466,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * return null even if it may later return non-null when delays
      * expire.
      */
+    //阻塞队列
     private final BlockingQueue<Runnable> workQueue;
 
     /**
