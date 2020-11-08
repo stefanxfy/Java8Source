@@ -303,8 +303,9 @@ public class ScheduledThreadPoolExecutor
          */
         public void run() {
             boolean periodic = isPeriodic();
-            //当runState为SHUTDOWN时，周期性任务不会中断，非周期性任务会中断
+            //当runState为SHUTDOWN时，周期性任务会中断取消，非周期性任务不会中断
             if (!canRunInCurrentRunState(periodic))
+                //取消任务
                 cancel(false);
             else if (!periodic)
                 //非周期性任务，只执行一次
@@ -380,10 +381,10 @@ public class ScheduledThreadPoolExecutor
      */
     @Override void onShutdown() {
         BlockingQueue<Runnable> q = super.getQueue();
-        //是否保持延时
+        //Shutdown后是否保持延时， 默认true
         boolean keepDelayed =
             getExecuteExistingDelayedTasksAfterShutdownPolicy();
-        //是否保持周期
+        //Shutdown后是否保持周期， 默认false
         boolean keepPeriodic =
             getContinueExistingPeriodicTasksAfterShutdownPolicy();
         if (!keepDelayed && !keepPeriodic) {

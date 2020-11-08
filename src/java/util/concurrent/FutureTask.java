@@ -354,7 +354,6 @@ public class FutureTask<V> implements RunnableFuture<V> {
             // leaked interrupts
             s = state;
             if (s >= INTERRUPTING)
-                //？
                 handlePossibleCancellationInterrupt(s);
         }
         return ran && s == NEW;
@@ -369,7 +368,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
         // chance to interrupt us.  Let's spin-wait patiently.
         if (s == INTERRUPTING)
             while (state == INTERRUPTING)
-                //暂停当前线程，等待完全中断
+                //暂停当前线程，让出cpu时间片
                 Thread.yield(); // wait out pending interrupt
 
         // assert state == INTERRUPTED;
