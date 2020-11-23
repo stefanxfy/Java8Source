@@ -186,6 +186,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
     static final int NCPUS = Runtime.getRuntime().availableProcessors();
 
     /**
+     * 在定时等待中阻塞前旋转的次数。
      * The number of times to spin before blocking in timed waits.
      * The value is empirically derived -- it works well across a
      * variety of processors and OSes. Empirically, the best value
@@ -195,6 +196,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
     static final int maxTimedSpins = (NCPUS < 2) ? 0 : 32;
 
     /**
+     * 在不定时等待中阻塞之前旋转的次数。
      * The number of times to spin before blocking in untimed waits.
      * This is greater than timed value because untimed waits spin
      * faster since they don't need to check times on each spin.
@@ -606,6 +608,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
         transient volatile QNode cleanMe;
 
         TransferQueue() {
+            // 初始化 head=tail=new QNode(null, false)
             QNode h = new QNode(null, false); // initialize to dummy node.
             head = h;
             tail = h;
@@ -638,6 +641,9 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
         }
 
         /**
+         * put节点和take节点一旦相遇，就会配对出队列，
+         * 所以在队列中不可能同时存在put节点和take节点，
+         * 要么所有节点都是put节点，要么所有节点都是take节点。
          * Puts or takes an item.
          */
         @SuppressWarnings("unchecked")
@@ -681,7 +687,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                     //h == t 初始化队列  or  同一种模式
                     QNode tn = t.next;
                     if (t != tail)                  // inconsistent read
-                        //不一致了重新for
+                        // tail已经变了 spin
                         continue;
                     if (tn != null) {               // lagging tail
                         //tn设置为tail
@@ -697,38 +703,58 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                         // failed to link in
                         //加入尾部失败
                         continue;
-                    //加入尾部成功后，将tail指向 新节点
+                    //加入尾部成功后，将tail指向 新节点s
                     advanceTail(t, s);
-                    // swing tail and wait  摇尾巴等待
+                    // swing tail and wait  摇尾巴等待 进入阻塞状态
                     Object x = awaitFulfill(s, e, timed, nanos);
-                    if (x == s) {                   // wait was cancelled
+                    if (x == s) {
+                        // 返回的x=s 说明是取消了，
+                        // s.tryCancel(e)  s.item 从e改为 node 是本身
+                        // wait was cancelled
                         clean(t, s);
                         return null;
                     }
-
+                    // 从队列中唤醒 确定已经处于队列中的第一个元素
                     if (!s.isOffList()) {           // not already unlinked
                         advanceHead(t, s);          // unlink if head
                         if (x != null)              // and forget fields
                             s.item = s;
                         s.waiter = null;
                     }
+                    // 被唤醒 返回
+                    // x != null put唤醒take
+                    // x=null，take唤醒put
                     return (x != null) ? (E)x : e;
 
                 } else {                            // complementary-mode
+                    // 不是同一种模式， 配对操作casItem
                     QNode m = h.next;               // node to fulfill
                     if (t != tail || m == null || h != head)
+                        // 不一致读 spin
                         continue;                   // inconsistent read
 
                     Object x = m.item;
+                    // e!=null == x!=null
+
+                    // m.casItem(x, e) 不同模式配对
+                    // 如果是put节点，则isData=true，item！=null；
+                    // 如果是take节点，则isData=false，item=null。
+                    // 如果CAS操作不成功，则isData和item之间将不一致，
+                    // 也就是isData！=（x！=null），通过这个条件可以判断节点是否已经被匹配过了。
+                    //isData == (x != null) false, x == m fase, x,e配对交换
+                    //
                     if (isData == (x != null) ||    // m already fulfilled
                         x == m ||                   // m cancelled
                         !m.casItem(x, e)) {         // lost CAS
+                        // 已经配过对 直接出队
                         advanceHead(h, m);          // dequeue and retry
                         continue;
                     }
-
+                    // 未配对 出队列 并唤醒
                     advanceHead(h, m);              // successfully fulfilled
                     LockSupport.unpark(m.waiter);
+                    // x=null put唤醒take
+                    // x != null take唤醒put
                     return (x != null) ? (E)x : e;
                 }
             }
@@ -747,13 +773,18 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
             /* Same idea as TransferStack.awaitFulfill */
             final long deadline = timed ? System.nanoTime() + nanos : 0L;
             Thread w = Thread.currentThread();
+            // 若新节点s是head的后继 则spin 一定经验值
             int spins = ((head.next == s) ?
                          (timed ? maxTimedSpins : maxUntimedSpins) : 0);
             for (;;) {
                 if (w.isInterrupted())
+                    // 取消，将item设置为 node自己
                     s.tryCancel(e);
                 Object x = s.item;
                 if (x != e)
+                    // 两种情况 返回
+                    // 1、s节点取消
+                    // 2、被唤醒 x被设置为null，导致x!=e
                     return x;
                 if (timed) {
                     nanos = deadline - System.nanoTime();
@@ -870,6 +901,9 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
      *        access; otherwise the order is unspecified.
      */
     public SynchronousQueue(boolean fair) {
+        // 公平是TransferQueue，非公平是TransferStack
+        // 公平性遵循队列先进先出的特性，首先put的在队头和take先配对 所以是公平的。
+        // 非公平性遵循栈先进后出的特性，首先put的在栈底，后put的在栈顶先与take配对，所以是非公平的。
         transferer = fair ? new TransferQueue<E>() : new TransferStack<E>();
     }
 
