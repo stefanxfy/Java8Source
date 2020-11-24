@@ -221,10 +221,13 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
 
         /* Modes for SNodes, ORed together in node fields */
         /** Node represents an unfulfilled consumer */
+        // take节点
         static final int REQUEST    = 0;
         /** Node represents an unfulfilled producer */
+        // put节点
         static final int DATA       = 1;
         /** Node is fulfilling another unfulfilled DATA or REQUEST */
+        // 二者配对之后，会生成一个FULFILLING节点，入栈，然后FULLING节点和被配对的节点一起出栈。
         static final int FULFILLING = 2;
 
         /** Returns true if m has fulfilling bit set. */
@@ -233,10 +236,10 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
         /** Node class for TransferStacks. */
         static final class SNode {
             volatile SNode next;        // next node in stack
-            volatile SNode match;       // the node matched to this
+            volatile SNode match;       // the node matched to this 配对的节点
             volatile Thread waiter;     // to control park/unpark
             Object item;                // data; or null for REQUESTs
-            int mode;
+            int mode;    // 三种模式
             // Note: item and mode fields don't need to be volatile
             // since they are always written before, and read after,
             // other volatile/atomic operations.
@@ -261,6 +264,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
             boolean tryMatch(SNode s) {
                 if (match == null &&
                     UNSAFE.compareAndSwapObject(this, matchOffset, null, s)) {
+                    // 配对成功，唤醒阻塞线程
                     Thread w = waiter;
                     if (w != null) {    // waiters need at most one unpark
                         waiter = null;
@@ -268,6 +272,7 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                     }
                     return true;
                 }
+                // 配对成功 返回true 失败返回false
                 return match == s;
             }
 
@@ -351,39 +356,52 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
 
             SNode s = null; // constructed/reused as needed
             int mode = (e == null) ? REQUEST : DATA;
-
+            //REQUEST take\ DATA  put
             for (;;) {
                 SNode h = head;
                 if (h == null || h.mode == mode) {  // empty or same-mode
+                    // 空的 or 同一模式
                     if (timed && nanos <= 0) {      // can't wait
                         if (h != null && h.isCancelled())
                             casHead(h, h.next);     // pop cancelled node
                         else
                             return null;
-                    } else if (casHead(h, s = snode(s, e, h, mode))) {
+                    } else if (casHead(h, s = snode(s, e, h, mode))) { // 入栈成功，新节点在栈顶
+                        // 阻塞等待
                         SNode m = awaitFulfill(s, timed, nanos);
                         if (m == s) {               // wait was cancelled
+                            // 返回的m=s 说明是取消了，
+                            // s.tryCancel(e)  match 改为 s 本身
                             clean(s);
                             return null;
                         }
                         if ((h = head) != null && h.next == s)
+                            //
                             casHead(h, s.next);     // help s's fulfiller
+                        // mode=REQUEST  take被put唤醒  返回配对的（put）的item
+                        // mone!=REQUEST put被take唤醒， 返回自己（put）的item
                         return (E) ((mode == REQUEST) ? m.item : s.item);
                     }
                 } else if (!isFulfilling(h.mode)) { // try to fulfill
+                    // 不同模式  没有配过对
                     if (h.isCancelled())            // already cancelled
                         casHead(h, h.next);         // pop and retry
-                    else if (casHead(h, s=snode(s, e, h, FULFILLING|mode))) {
+                    else if (casHead(h, s=snode(s, e, h, FULFILLING|mode))) { //生成一个FULFILLING节点， 入栈顶
                         for (;;) { // loop until matched or waiters disappear
                             SNode m = s.next;       // m is s's match
                             if (m == null) {        // all waiters are gone
+                                //FULFILLING节点后面没有节点了，即没有阻塞的线程了，
+                                //fulfill node 出栈
                                 casHead(s, null);   // pop fulfill node
                                 s = null;           // use new node next time
                                 break;              // restart main loop
                             }
                             SNode mn = m.next;
-                            if (m.tryMatch(s)) {
+                            if (m.tryMatch(s)) { // 配对唤醒阻塞线程
+                                // s（fulfill node）和m配对后 一起出栈， m的后继mn成为新的head
                                 casHead(s, mn);     // pop both s and m
+                                // mode=REQUEST take配对put 返回put时的item
+                                // mode!=REQUEST put配对take，返回依然是put的item
                                 return (E) ((mode == REQUEST) ? m.item : s.item);
                             } else                  // lost match
                                 s.casNext(m, mn);   // help unlink
@@ -437,6 +455,8 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
              */
             final long deadline = timed ? System.nanoTime() + nanos : 0L;
             Thread w = Thread.currentThread();
+            // (h == s || h == null || isFulfilling(h.mode))
+            // s是头节点 or s已经配过对
             int spins = (shouldSpin(s) ?
                          (timed ? maxTimedSpins : maxUntimedSpins) : 0);
             for (;;) {
@@ -448,11 +468,14 @@ public class SynchronousQueue<E> extends AbstractQueue<E>
                 if (timed) {
                     nanos = deadline - System.nanoTime();
                     if (nanos <= 0L) {
+                        // 时间到 取消
+                        // match 设置为节点s
                         s.tryCancel();
                         continue;
                     }
                 }
                 if (spins > 0)
+                    // s是head or 已经配过对 则自旋一定次数
                     spins = shouldSpin(s) ? (spins-1) : 0;
                 else if (s.waiter == null)
                     s.waiter = w; // establish waiter so can park next iter
