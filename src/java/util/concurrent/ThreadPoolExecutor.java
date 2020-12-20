@@ -378,20 +378,41 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * that workerCount is 0 (which sometimes entails a recheck -- see
      * below).
      */
+    //一个ctl 表示两种含义，高3位为runState，低29为workerCount
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
     private static final int COUNT_BITS = Integer.SIZE - 3;
+    //536870911
+    //0001 1111 1111 1111 1111 1111 1111 1111
     private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
 
     // runState is stored in the high-order bits
+    //-536870912
+    //111 0 0000 0000 0000 0000 0000 0000 0000
     private static final int RUNNING    = -1 << COUNT_BITS;
+    //0
+    //000 0 0000 0000 0000 0000 0000 0000 0000
     private static final int SHUTDOWN   =  0 << COUNT_BITS;
+    //536870912
+    //001 0 0000 0000 0000 0000 0000 0000 0000
     private static final int STOP       =  1 << COUNT_BITS;
+    //1073741824
+    //010 0 0000 0000 0000 0000 0000 0000 0000
     private static final int TIDYING    =  2 << COUNT_BITS;
+    //1610612736
+    //011 0 0000 0000 0000 0000 0000 0000 0000
     private static final int TERMINATED =  3 << COUNT_BITS;
 
     // Packing and unpacking ctl
+    //从变量ctl中解析出runState
+    //先将CAPACITY做按位非操作，即~n = - ( n+1 )，就是 RUNNING
+    //然后再做按位与，可得出高3位
     private static int runStateOf(int c)     { return c & ~CAPACITY; }
+    //从变量ctl中解析出workerCount
+    //对CAPACITY按位与，可得出低29位
+    //1 & 1 = 1，1 & 0 = 0，0 & 1 = 0，0 & 0 = 0
     private static int workerCountOf(int c)  { return c & CAPACITY; }
+    //将rs和wc转为二进制 再进行按位或计算，位上只要有1就是该位就是1
+    // 1 & 1 = 1，1 & 0 = 1，0 & 1 = 1，0 & 0 = 0
     private static int ctlOf(int rs, int wc) { return rs | wc; }
 
     /*
@@ -445,6 +466,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * return null even if it may later return non-null when delays
      * expire.
      */
+    //阻塞队列
     private final BlockingQueue<Runnable> workQueue;
 
     /**
@@ -974,7 +996,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     mainLock.unlock();
                 }
                 if (workerAdded) {
-                    //启动线程
+                    //启动工作线程
                     t.start();
                     workerStarted = true;
                 }
@@ -1001,9 +1023,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             if (w != null)
                 //1、从workers删除worder
                 workers.remove(w);
-            //2、worderCount递减
+            //2、worderCount cas自旋递减
             decrementWorkerCount();
-            //3、重试终止线程池
+            //3、如果线程池正处于销毁的过程，则尝试自旋终止线程池
             tryTerminate();
         } finally {
             mainLock.unlock();
@@ -1030,7 +1052,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         final ReentrantLock mainLock = this.mainLock;
         mainLock.lock();
         try {
+            //统计完成的任务数
             completedTaskCount += w.completedTasks;
+            //从workers删除worker
             workers.remove(w);
         } finally {
             mainLock.unlock();
@@ -1040,6 +1064,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
 
         int c = ctl.get();
         if (runStateLessThan(c, STOP)) {
+            //stop以内，completedAbruptly=false
             if (!completedAbruptly) {
                 int min = allowCoreThreadTimeOut ? 0 : corePoolSize;
                 if (min == 0 && ! workQueue.isEmpty())
@@ -1047,6 +1072,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 if (workerCountOf(c) >= min)
                     return; // replacement not needed
             }
+            //allowCoreThreadTimeOut=true，且没有正在运行的工作线程
+            //或者allowCoreThreadTimeOut=false,工作线程数没有达到corePoolSize
+            //则创建一个空工作线程作为弥补。
             addWorker(null, false);
         }
     }
@@ -1086,7 +1114,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             // Are workers subject to culling?
             boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
             //大于maximumPoolSize时，将不从阻塞队列中取
-            //大于corePoolSize时，timedOut，不从阻塞队列中取
+            //大于corePoolSize 或者 allowCoreThreadTimeOut 为true，且超时了不从阻塞队列中取
             if ((wc > maximumPoolSize || (timed && timedOut))
                 && (wc > 1 || workQueue.isEmpty())) {
                 if (compareAndDecrementWorkerCount(c))
@@ -1096,10 +1124,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
 
             try {
                 //通过timed判断是用poll还是take，
-                //allowCoreThreadTimeOut默认是false，所以一般判断wc > corePoolSize
-                //正在运行的工作线程大于核心线程数时，使用poll，此时大于核心线程数的线程，如果从阻塞队列中取不到任务
-                // 或者阻塞时间到了，将会被清除。只留下核心线程数的线程存活。
-                //正在运行的工作线程小于核心线程数时，使用take，此时的核心线程一直不会消除
+                //allowCoreThreadTimeOut默认是false，设置为true时，corePoolSize内线程和corePoolSize外的线程超时都会被回收
+                //具有超时效果timed=true，则用poll取任务，时间到取不到如果从阻塞队列中取不到任务，则返回null
+                //不具有超时效果timed=false，使用take。
                 Runnable r = timed ?
                     workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
                     workQueue.take();
@@ -1180,7 +1207,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     try {
                         //直接调用了run函数
                         //task的异常被worker捕获了，但是并没有做什么处理
-                        //一旦task异常，用户要是没有自己try-catch，不易排查
+                        //一旦task异常，用户要是没有自己try-catch。则会使循环终止。
                         task.run();
                     } catch (RuntimeException x) {
                         thrown = x; throw x;
@@ -1200,6 +1227,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             }
             completedAbruptly = false;
         } finally {
+            //发生异常or超时跳出循环时，销毁worker线程
             processWorkerExit(w, completedAbruptly);
         }
     }
@@ -1411,7 +1439,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             //2.2、再次检查线程池状态是否running，否就将任务从阻塞队列删除
             int recheck = ctl.get();
             if (! isRunning(recheck) && remove(command))
-                //2.2.1、并调用拒绝策略
+                //2.2.1并调用拒绝策略
                 reject(command);
             else if (workerCountOf(recheck) == 0)
                 addWorker(null, false);

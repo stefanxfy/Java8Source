@@ -263,15 +263,26 @@ public class ReentrantReadWriteLock
          * 低16位写锁，高16位读锁
          */
         static final int SHARED_SHIFT   = 16;
+
+        //65536
+        //1 0000 0000 0000 0000
+        //高16位读锁
         static final int SHARED_UNIT    = (1 << SHARED_SHIFT);
+        //65535
+        //1111 1111 1111 1111
         static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;
+        //65535
+        //1111 1111 1111 1111
+        //低16位写锁
         static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
 
         /** Returns the number of shared holds represented in count  */
         //共享锁（读锁）重入的次数
+        //无符号右移16位,就可以得出从1开始的共享锁重入次数
         static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
         /** Returns the number of exclusive holds represented in count  */
         //独占锁（写锁）重入的次数
+        //按位与
         static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
 
         /**
