@@ -462,16 +462,20 @@ public final class ProcessBuilder
          */
         public enum Type {
             /**
+             * 表示子进程I/O将被连接到当前java进程上的一个管道，
+             * 这是子进程标准I/O的默认处理。
              * The type of {@link Redirect#PIPE Redirect.PIPE}.
              */
             PIPE,
 
             /**
+             * 继承父进程的流模式
              * The type of {@link Redirect#INHERIT Redirect.INHERIT}.
              */
             INHERIT,
 
             /**
+             *
              * The type of redirects returned from
              * {@link Redirect#from Redirect.from(File)}.
              */
@@ -666,6 +670,10 @@ public final class ProcessBuilder
         private Redirect() {}
     }
 
+    /**
+     * 0-标准输入，1-标准输出，2-异常输出
+     * @return
+     */
     private Redirect[] redirects() {
         if (redirects == null)
             redirects = new Redirect[] {

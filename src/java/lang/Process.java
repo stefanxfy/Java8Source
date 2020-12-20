@@ -215,6 +215,7 @@ public abstract class Process {
     public abstract int exitValue();
 
     /**
+     * 销毁当前命令进程，是否是强制的，由实现类决定
      * Kills the subprocess. Whether the subprocess represented by this
      * {@code Process} object is forcibly terminated or not is
      * implementation dependent.
@@ -222,6 +223,8 @@ public abstract class Process {
     public abstract void destroy();
 
     /**
+     * 强制销毁当前命令进程，语义上是强制销毁，
+     * 官方默认给的是直接调用destroy()，可根据isAlive()判断是否强制销毁命令进程
      * Kills the subprocess. The subprocess represented by this
      * {@code Process} object is forcibly terminated.
      *

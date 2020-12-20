@@ -800,7 +800,6 @@ public abstract class AbstractQueuedSynchronizer
         // If we are the tail, remove ourselves.
         //如果node在尾部，tail前移
         if (node == tail && compareAndSetTail(node, pred)) {
-            //???
             compareAndSetNext(pred, predNext, null);
         } else {
             //node不在尾部
