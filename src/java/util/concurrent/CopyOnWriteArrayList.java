@@ -450,15 +450,21 @@ public class CopyOnWriteArrayList<E>
      */
     public boolean add(E e) {
         final ReentrantLock lock = this.lock;
+        // 加锁
         lock.lock();
         try {
+            // 获取当前数组
             Object[] elements = getArray();
             int len = elements.length;
+            // 复制一份副本
             Object[] newElements = Arrays.copyOf(elements, len + 1);
+            // 将元素加到新数组中
             newElements[len] = e;
+            // 新数组赋值给旧数组
             setArray(newElements);
             return true;
         } finally {
+            // 释放锁
             lock.unlock();
         }
     }
@@ -548,7 +554,9 @@ public class CopyOnWriteArrayList<E>
      * @return {@code true} if this list contained the specified element
      */
     public boolean remove(Object o) {
+        // 获取旧数组快照
         Object[] snapshot = getArray();
+        // 判断需要删除的元素是否在数组中，不在则直接返回false，是则继续删除操作
         int index = indexOf(o, snapshot, 0, snapshot.length);
         return (index < 0) ? false : remove(o, snapshot, index);
     }
@@ -563,27 +571,38 @@ public class CopyOnWriteArrayList<E>
         try {
             Object[] current = getArray();
             int len = current.length;
+            // 快照与当前数组进行比较，不相等说明数组已经被其他线程修改
             if (snapshot != current) findIndex: {
                 int prefix = Math.min(index, len);
+                // 遍历查找当前数组中是否有需要删除的元素
                 for (int i = 0; i < prefix; i++) {
                     if (current[i] != snapshot[i] && eq(o, current[i])) {
                         index = i;
+                        // 有则结束判断
                         break findIndex;
                     }
                 }
+                // 上面找了一遍没有找到
+                // index >= len 说明上面查找的是当前整个数组，需要删除的元素已经被修改
                 if (index >= len)
                     return false;
+                // 当前数组变长了，current index位置的元素依然是需要删除的元素，停止判断
                 if (current[index] == o)
                     break findIndex;
+                // 走到这了数组变长了，index位置的元素也已经被删除，但是不代表其他线程新增的元素没有需要删除的元素，继续判断
                 index = indexOf(o, current, index, len);
                 if (index < 0)
                     return false;
             }
+            // 新数组长度减一
             Object[] newElements = new Object[len - 1];
+            // 从0开始复制旧数组index个元素到新数组的0至index-1位置
             System.arraycopy(current, 0, newElements, 0, index);
+            // 跳过index，从index+1复制旧数组剩下的元素到新数组的index至最后的位置。
             System.arraycopy(current, index + 1,
                              newElements, index,
                              len - index - 1);
+            // 新数组赋值给旧数组
             setArray(newElements);
             return true;
         } finally {
