@@ -53,6 +53,20 @@ import java.util.function.UnaryOperator;
 import sun.misc.SharedSecrets;
 
 /**
+ * CopyOnWrite的方式保证线程安全：
+ *  1.所有的读操作不需要加锁。
+ *  2.所有的写操作需要加悲观锁or乐观锁，写数据需要先拷贝一个旧数组进行修改，然后将新数组赋值给旧数据。
+ *  3.数组需要volatile修饰，通过volatile的语义，write happen-before read 保证读操作是安全的。
+ *  4.内存占用问题：CopyOnWrite缺陷也很明显，因为复制副本所以双倍占用内存，可能造成频繁的Yong GC和Full GC，利用CopyOnWrite机制更新大对象需要注意。
+ *  5.数据一致性问题：CopyOnWrite只保证了数据最终一致性，数据的实时一致性不能保证，所以读数据可能会有一定的延迟。
+ *  6.CopyOnWrite空间换时间，在读多写少的情况非常有效，因为读不加锁，写操作不会阻塞大量的读操作。
+ *
+ *  题外话：
+ *  7.若直接用ArrayList保证线程安全，有两种方案：
+ *  （1）读写操作都加synchronized，读写互斥、读读互斥、写写互斥，性能低下。
+ *  （2）加读写锁ReadWriteLock，读操作加读锁，写操作加写锁，读读不互斥，读写互斥，写写互斥，因为读写互斥，在读多写少的场景会出现，一个写操作阻塞住大量的读操作，降低性能。
+ *  故而CopyOnWriteArrayList利用CopyOnWrite思想，读操作不加锁，写操作复制副本修改，加悲观锁或者乐观锁，这就不会出现写操作阻塞读操作的现象，用空间换了时间。
+ *  参考：https://blog.csdn.net/u013452337/article/details/90238052
  * A thread-safe variant of {@link java.util.ArrayList} in which all mutative
  * operations ({@code add}, {@code set}, and so on) are implemented by
  * making a fresh copy of the underlying array.
@@ -398,6 +412,7 @@ public class CopyOnWriteArrayList<E>
     }
 
     /**
+     * 替换指定位置元素
      * Replaces the element at the specified position in this list with the
      * specified element.
      *
@@ -410,6 +425,7 @@ public class CopyOnWriteArrayList<E>
             Object[] elements = getArray();
             E oldValue = get(elements, index);
 
+            // oldValue和element不相等，进行替换
             if (oldValue != element) {
                 int len = elements.length;
                 Object[] newElements = Arrays.copyOf(elements, len);
@@ -417,6 +433,7 @@ public class CopyOnWriteArrayList<E>
                 setArray(newElements);
             } else {
                 // Not quite a no-op; ensures volatile write semantics
+                // 二者相等，不是完全没有操作;确保volatile写语义，volatile write happen before read
                 setArray(elements);
             }
             return oldValue;
@@ -465,14 +482,19 @@ public class CopyOnWriteArrayList<E>
             Object[] newElements;
             int numMoved = len - index;
             if (numMoved == 0)
+                // numMoved=0 即是在数组的最后加入element
                 newElements = Arrays.copyOf(elements, len + 1);
             else {
                 newElements = new Object[len + 1];
+                // elements 从0开始拷贝元素至 newElements（从0开始），length=index
                 System.arraycopy(elements, 0, newElements, 0, index);
+                // elements 从index开始拷贝元素至 newElements（从index+1开始），length=numMoved
                 System.arraycopy(elements, index, newElements, index + 1,
                                  numMoved);
             }
+            // newElements的index位置留给新元素element
             newElements[index] = element;
+            // newElements 赋值给 旧数组array
             setArray(newElements);
         } finally {
             lock.unlock();
@@ -495,10 +517,13 @@ public class CopyOnWriteArrayList<E>
             E oldValue = get(elements, index);
             int numMoved = len - index - 1;
             if (numMoved == 0)
+                // numMoved == 0 即是删除数组的最后一个元素，则不需要移动其他元素。
                 setArray(Arrays.copyOf(elements, len - 1));
             else {
+                // 新数组 length= len-1
                 Object[] newElements = new Object[len - 1];
                 System.arraycopy(elements, 0, newElements, 0, index);
+                // 丢掉旧数组index位置的元素，达到删除的效果
                 System.arraycopy(elements, index + 1, newElements, index,
                                  numMoved);
                 setArray(newElements);
@@ -605,11 +630,13 @@ public class CopyOnWriteArrayList<E>
 
     /**
      * Appends the element, if not present.
+     * double check
      *
      * @param e element to be added to this list, if absent
      * @return {@code true} if the element was added
      */
     public boolean addIfAbsent(E e) {
+        // 获取数组快照
         Object[] snapshot = getArray();
         return indexOf(e, snapshot, 0, snapshot.length) >= 0 ? false :
             addIfAbsent(e, snapshot);
@@ -625,8 +652,14 @@ public class CopyOnWriteArrayList<E>
         try {
             Object[] current = getArray();
             int len = current.length;
+            // 快照与当前数组比较，double-check，
+            // 这里1.6和1.8不同，1.8对1.6进行了优化
+            // 看源码时需要对比不同版本的差异
             if (snapshot != current) {
+                // 数组可能已经被修改，
                 // Optimize for lost race to another addXXX operation
+                // remove common=len
+                // add common=snapshot.length 先检查current中前snapshot.length个，然后检查新增的
                 int common = Math.min(snapshot.length, len);
                 for (int i = 0; i < common; i++)
                     if (current[i] != snapshot[i] && eq(e, current[i]))
