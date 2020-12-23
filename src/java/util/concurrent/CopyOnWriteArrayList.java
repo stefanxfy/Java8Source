@@ -571,6 +571,7 @@ public class CopyOnWriteArrayList<E>
         try {
             Object[] current = getArray();
             int len = current.length;
+            // double check
             // 快照与当前数组进行比较，不相等说明数组已经被其他线程修改
             if (snapshot != current) findIndex: {
                 int prefix = Math.min(index, len);
