@@ -508,6 +508,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * because the top two bits of 32bit hash fields are used for
      * control purposes.
      */
+    // 1 * 2^30 = 1073741824
     private static final int MAXIMUM_CAPACITY = 1 << 30;
 
     /**
@@ -839,6 +840,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         int cap = ((initialCapacity >= (MAXIMUM_CAPACITY >>> 1)) ?
                    MAXIMUM_CAPACITY :
                    tableSizeFor(initialCapacity + (initialCapacity >>> 1) + 1));
+        // 1.5倍的初始容量+1，再往上取最接近的2的整数次方
         this.sizeCtl = cap;
     }
 
@@ -1016,16 +1018,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             if (tab == null || (n = tab.length) == 0)
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                // tab不为null，则通过(n - 1) & hash 计算 tab对应索引下标，找到node
+                // node为null说明发生hash冲突，cas 设置新节点node到tab的对应位置，成功则结束循环
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
             else if ((fh = f.hash) == MOVED)
+                // 扩容？？？
                 tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
                 synchronized (f) {
+                    // i已经被计算过了
                     if (tabAt(tab, i) == f) {
+                        // 发生hash冲突
                         if (fh >= 0) {
                             binCount = 1;
                             for (Node<K,V> e = f;; ++binCount) {
@@ -1038,6 +1045,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                         e.val = value;
                                     break;
                                 }
+                                // 解决hash冲突的方式 链表法，新节点放在了链表尾部，这里和jdk1.7不一样
                                 Node<K,V> pred = e;
                                 if ((e = e.next) == null) {
                                     pred.next = new Node<K,V>(hash, key,
@@ -1046,11 +1054,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
+                        // 红黑树
                         else if (f instanceof TreeBin) {
                             Node<K,V> p;
                             binCount = 2;
                             if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
                                                            value)) != null) {
+                                // p != null 说明 key-value已经存在
                                 oldVal = p.val;
                                 if (!onlyIfAbsent)
                                     p.val = value;
@@ -2224,14 +2234,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         Node<K,V>[] tab; int sc;
         while ((tab = table) == null || tab.length == 0) {
             if ((sc = sizeCtl) < 0)
-                Thread.yield(); // lost initialization race; just spin
+                Thread.yield(); // lost initialization race; just spi
             else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+                // 因为初始化的工作量很小
+                // 多个线程的竞争是通过对sizeCtl进行CAS操作实现的
+                // 如果某个线程成功地把sizeCtl 设置为-1，它就拥有了初始化的权利，进入初始化的代码模块，
+                // 等到初始化完成，再把sizeCtl设置回去；其他线程则一直执行while循环，自旋等待，
+                // 直到数组不为null，即当初始化结束时，退出整个函数。
                 try {
                     if ((tab = table) == null || tab.length == 0) {
                         int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
+                        // 3/4
                         sc = n - (n >>> 2);
                     }
                 } finally {
