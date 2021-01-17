@@ -796,6 +796,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private transient volatile int sizeCtl;
 
     /**
+     * transferIndex记录了扩容的进度。
+     * 初始值为n，从大到小扩容，每次减stride个位置，最终减至n＜=0，表示整个扩容完成。
+     * 因此，从[0，transferIndex-1]的位置表示还没有分配到线程扩容的部分，
+     * 从[transfexIndex，n-1]的位置表示已经分配给某个线程进行扩容，当前正在扩容中，或者已经扩容成功。
      * The next table index (plus one) to split while resizing.
      */
     private transient volatile int transferIndex;
@@ -2168,6 +2172,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /* ---------------- Special Nodes -------------- */
 
     /**
+     * 该占位对象的 hash 值为 -1 该占位对象存在时表示集合正在扩容状态，
+     * key、value、next 属性均为 null ，nextTable 属性指向扩容后的数组
+     * 该占位对象主要有两个用途：
+     * 1、占位作用，用于标识数组该位置的桶已经迁移完毕，处于扩容中的状态。
+     * 2、作为一个转发的作用，扩容期间如果遇到查询操作，遇到转发节点，
+     * 会把该查询操作转发到新的数组上去，不会阻塞查询操作。
      * A node inserted at head of bins during transfer operations.
      */
     static final class ForwardingNode<K,V> extends Node<K,V> {
@@ -2382,10 +2392,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void transfer(Node<K,V>[] tab, Node<K,V>[] nextTab) {
         int n = tab.length, stride;
+        // 计算步长，拆分任务
         if ((stride = (NCPU > 1) ? (n >>> 3) / NCPU : n) < MIN_TRANSFER_STRIDE)
             stride = MIN_TRANSFER_STRIDE; // subdivide range
         if (nextTab == null) {            // initiating
             try {
+                // 扩容 2倍
                 @SuppressWarnings("unchecked")
                 Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n << 1];
                 nextTab = nt;
@@ -2394,6 +2406,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 return;
             }
             nextTable = nextTab;
+            // transferIndex 记录扩容的进度
             transferIndex = n;
         }
         int nextn = nextTab.length;
@@ -2407,6 +2420,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 if (--i >= bound || finishing)
                     advance = false;
                 else if ((nextIndex = transferIndex) <= 0) {
+                    // transferIndex <= 0 扩容完毕
                     i = -1;
                     advance = false;
                 }
@@ -2414,16 +2428,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                          (this, TRANSFERINDEX, nextIndex,
                           nextBound = (nextIndex > stride ?
                                        nextIndex - stride : 0))) {
+                    // cas 设置TRANSFERINDEX，分配任务[transferIndex...n-1]每次分配任务的长度是stride
+                    //[0....transferIndex-1, transferIndex...n-1]
                     bound = nextBound;
                     i = nextIndex - 1;
-                    advance = false;
+                    advance = false;  // 分配任务成功结束循环
                 }
             }
+            // i已经越界了，整个数组已经遍历完成
             if (i < 0 || i >= n || i + n >= nextn) {
                 int sc;
                 if (finishing) {
+                    // 扩容完毕
                     nextTable = null;
                     table = nextTab;
+                    // sizeCtl 设置为新的数组长度的 3/4.即 3/4 *2n
                     sizeCtl = (n << 1) - (n >>> 1);
                     return;
                 }
@@ -2435,23 +2454,30 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
             }
             else if ((f = tabAt(tab, i)) == null)
+                // 迁移完毕，赋值一个fwd
                 advance = casTabAt(tab, i, null, fwd);
-            else if ((fh = f.hash) == MOVED)
+            else if ((fh = f.hash) == MOVED) // tab[i]的位置已经在迁移的过程中
                 advance = true; // already processed
             else {
+                // 对tab[i]进行迁移，可能是链表or红黑树
                 synchronized (f) {
                     if (tabAt(tab, i) == f) {
                         Node<K,V> ln, hn;
                         if (fh >= 0) {
+                            // 链表
                             int runBit = fh & n;
                             Node<K,V> lastRun = f;
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
+                                // 计算p的位置
                                 int b = p.hash & n;
                                 if (b != runBit) {
+                                    // 和runBit不是同一位置
                                     runBit = b;
                                     lastRun = p;
                                 }
                             }
+                            // hn、ln什么意思
+                            // 找到了lastRun
                             if (runBit == 0) {
                                 ln = lastRun;
                                 hn = null;
@@ -2628,6 +2654,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         Node<K,V> b; int n, sc;
         if (tab != null) {
             if ((n = tab.length) < MIN_TREEIFY_CAPACITY)
+                // tab 容量小于64，则扩容数组为原来的2倍
                 tryPresize(n << 1);
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
                 synchronized (b) {
