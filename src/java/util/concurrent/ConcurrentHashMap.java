@@ -1029,7 +1029,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     break;                   // no lock when adding to empty bin
             }
             else if ((fh = f.hash) == MOVED)
-                // 扩容？？？
+                // 发现哈希值为MOVED时，说明数组正在扩容，帮助扩容，这个节点只可能是ForwardingNode
                 tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
@@ -1073,6 +1073,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     }
                 }
                 if (binCount != 0) {
+                    // 链表的长度>=8时 可能变为红黑树，也可能是扩容，数组长度小于64时，是扩容数组
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
                     if (oldVal != null)
@@ -2300,6 +2301,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             Node<K,V>[] tab, nt; int n, sc;
             while (s >= (long)(sc = sizeCtl) && (tab = table) != null &&
                    (n = tab.length) < MAXIMUM_CAPACITY) {
+                // s 节点的个数 >= sc扩容的阈值，并且tab的地址没有改变，即还在扩容中，并且数组的长度没有达到最大值
+                // 则开始扩容
                 int rs = resizeStamp(n);
                 if (sc < 0) {
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
@@ -2352,6 +2355,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         while ((sc = sizeCtl) >= 0) {
             Node<K,V>[] tab = table; int n;
             if (tab == null || (n = tab.length) == 0) {
+                // tryPresize 在 putAll里调用时，如果数组还未初始化，则进行数组初始化
                 n = (sc > c) ? sc : c;
                 if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
                     try {
@@ -2367,20 +2371,31 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
             }
             else if (c <= sc || n >= MAXIMUM_CAPACITY)
+                // 若 扩容容量没有达到sc 扩容的阈值 or 数组的长度已经是最大长度了，则break，否则扩容
                 break;
             else if (tab == table) {
+                // tab == table。地址未变，则没有其他线程改动数组，则进行扩容
                 int rs = resizeStamp(n);
                 if (sc < 0) {
                     Node<K,V>[] nt;
+                    // (sc >>> RESIZE_STAMP_SHIFT) != rs  true不是在扩容状态
+                    // sc == rs + 1 扩容已经完成
+                    // sc == rs + MAX_RESIZERS
+                    // (nt = nextTable) == null
+                    // transferIndex <= 0 扩容的任务已经分完
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
                         transferIndex <= 0)
                         break;
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
+                        // 加入扩容的队伍
                         transfer(tab, nt);
                 }
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
                                              (rs << RESIZE_STAMP_SHIFT) + 2))
+                    // RESIZE_STAMP_BITS = 16
+                    // RESIZE_STAMP_SHIFT = 32 - RESIZE_STAMP_BITS = 16
+                    // 第一个线程扩容， SIZECTL设置为 (rs << RESIZE_STAMP_SHIFT) + 2
                     transfer(tab, null);
             }
         }
@@ -2451,6 +2466,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         return;
                     finishing = advance = true;
                     i = n; // recheck before commit
+                    // 扩容是分段进行的，当前线程扩容完，其他线程可能还没有扩容完成，
+                    // 需要再检查一次，而且会帮忙一起扩容。
                 }
             }
             else if ((f = tabAt(tab, i)) == null)
@@ -2463,10 +2480,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 synchronized (f) {
                     if (tabAt(tab, i) == f) {
                         Node<K,V> ln, hn;
+                        // 为什么可以通过头节点的哈希值判断是链表还是红黑树呢？
+                        // 因为红黑树的头结点是TreeBin，其是一个标记节点不存实际的节点值，而是存下一个下一个first节点的地址
+                        // 其hash=TREEBIN=-2，key=value=null
                         if (fh >= 0) {
                             // 链表
                             int runBit = fh & n;
                             Node<K,V> lastRun = f;
+                            // lastRun并不是一条链表的最后一个，一条链表的节点可以分为两类，
+                            // hash & n=0为低位节点，hash & n!=0为高位节点。
+                            // 在循环中寻找lastRun的满足条件是链表中最后一个与头结点不是一类的节点作为lastRun，
+                            // 而此时lastRun后面可能还有节点，但都是头结点的同类节点。
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
                                 // 计算p的位置
                                 int b = p.hash & n;
@@ -2476,7 +2500,6 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     lastRun = p;
                                 }
                             }
-                            // hn、ln什么意思
                             // 找到了lastRun
                             if (runBit == 0) {
                                 ln = lastRun;
@@ -2486,6 +2509,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 hn = lastRun;
                                 ln = null;
                             }
+                            // 如果一条链表都是同类节点，则lastRun就是头节点f，下面的循环不会找，直接走setTabAt
+                            // lastRun之前的结点因为fh&n不确定，所以全部需要重新迁移。
+                            // lastRun之后的节点不需要复制，直接跟随同类链表一起复制到新数组中
                             for (Node<K,V> p = f; p != lastRun; p = p.next) {
                                 int ph = p.hash; K pk = p.key; V pv = p.val;
                                 if ((ph & n) == 0)
@@ -2493,12 +2519,19 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 else
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
+                            // 通过ph & n 计算结果将原链表分为两条链表ln、hn，
+                            // ln就是低位链表，指位置在旧数组和新数组中一样。((ph & n)=0)
+                            // hn就是高位链表，指位置在旧数组和新数组中不一样，在新数组中需要加上旧数组的长度n ((ph & n)=n)
+                            // 这得益于，n的数值是2的n次方，其二进制是 1000...（若干0，如4:100,8:1000），和ph 哈希值做&运算就只有两个值，要么0，要么等于n
+                            // 正好有这个规律，ph & n=0的节点在新数组的位置不变，ph & n !=0 的节点在数组中的位置是旧数组的位置+旧数组的长度n
                             setTabAt(nextTab, i, ln);
                             setTabAt(nextTab, i + n, hn);
                             setTabAt(tab, i, fwd);
                             advance = true;
                         }
                         else if (f instanceof TreeBin) {
+                            //  是红黑树
+                            //
                             TreeBin<K,V> t = (TreeBin<K,V>)f;
                             TreeNode<K,V> lo = null, loTail = null;
                             TreeNode<K,V> hi = null, hiTail = null;
@@ -2512,6 +2545,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                         lo = p;
                                     else
                                         loTail.next = p;
+                                    // 尾插法，跑称为新的尾结点
                                     loTail = p;
                                     ++lc;
                                 }
@@ -2524,6 +2558,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     ++hc;
                                 }
                             }
+                            // 节点的个数 <= UNTREEIFY_THRESHOLD=6, 则树退为链表，链表依然保持链表,TreeNode变为node
+                            // 节点的个数 > UNTREEIFY_THRESHOLD=6, 则链表升为树，树保持树 // 构建为一颗红黑树new TreeBin
                             ln = (lc <= UNTREEIFY_THRESHOLD) ? untreeify(lo) :
                                 (hc != 0) ? new TreeBin<K,V>(lo) : t;
                             hn = (hc <= UNTREEIFY_THRESHOLD) ? untreeify(hi) :
@@ -2657,6 +2693,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // tab 容量小于64，则扩容数组为原来的2倍
                 tryPresize(n << 1);
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
+                // 链表转为红黑树
                 synchronized (b) {
                     if (tabAt(tab, index) == b) {
                         TreeNode<K,V> hd = null, tl = null;
