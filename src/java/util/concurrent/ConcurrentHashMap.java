@@ -1020,16 +1020,18 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
             if (tab == null || (n = tab.length) == 0)
+                // 1. tab 为空 初始化
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 // tab不为null，则通过(n - 1) & hash 计算 tab对应索引下标，找到node
-                // node为null说明发生hash冲突，cas 设置新节点node到tab的对应位置，成功则结束循环
+                // node为null说明没有发生hash冲突，cas 设置新节点node到tab的对应位置，成功则结束循环
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
             else if ((fh = f.hash) == MOVED)
-                // 发现哈希值为MOVED时，说明数组正在扩容，帮助扩容，这个节点只可能是ForwardingNode
+                // 发现哈希值为MOVED时，
+                // 说明数组正在扩容，帮助扩容，这个节点只可能是ForwardingNode
                 tab = helpTransfer(tab, f);
             else {
                 V oldVal = null;
@@ -1038,18 +1040,24 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (tabAt(tab, i) == f) {
                         // 发生hash冲突
                         if (fh >= 0) {
+                            // 链表
                             binCount = 1;
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
                                 if (e.hash == hash &&
                                     ((ek = e.key) == key ||
                                      (ek != null && key.equals(ek)))) {
+                                    // 链表中已经有hash相等且（key地址相等 or key值相等）
+                                    // 则判断是否需要替换
+                                    // put onlyIfAbsent=false，新值替换旧值
+                                    // putIfAbsent onlyIfAbsent=true,新值不替换旧值
                                     oldVal = e.val;
                                     if (!onlyIfAbsent)
                                         e.val = value;
                                     break;
                                 }
-                                // 解决hash冲突的方式 链表法，新节点放在了链表尾部，这里和jdk1.7不一样
+                                // 解决hash冲突的方式
+                                // 链表法，新节点放在了链表尾部，这里和jdk1.7不一样
                                 Node<K,V> pred = e;
                                 if ((e = e.next) == null) {
                                     pred.next = new Node<K,V>(hash, key,
@@ -1058,13 +1066,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
-                        // 红黑树
                         else if (f instanceof TreeBin) {
+                            // 红黑树
                             Node<K,V> p;
                             binCount = 2;
                             if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
                                                            value)) != null) {
-                                // p != null 说明 key-value已经存在
+                                // p != null 说明 key已经存在，看是否需要替换value
                                 oldVal = p.val;
                                 if (!onlyIfAbsent)
                                     p.val = value;
@@ -1073,7 +1081,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     }
                 }
                 if (binCount != 0) {
-                    // 链表的长度>=8时 可能变为红黑树，也可能是扩容，数组长度小于64时，是扩容数组
+                    // 链表的长度>=8时 可能变为红黑树，也可能是扩容，
+                    // 数组长度小于64时，是扩容数组
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
                     if (oldVal != null)
@@ -2349,6 +2358,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * @param size number of elements (doesn't need to be perfectly accurate)
      */
     private final void tryPresize(int size) {
+        // 扩容
+        // c 计算合适的扩容 容量，size >= MAXIMUM_CAPACITY/2 则合适的容量是MAXIMUM_CAPACITY
+        // 否则找一个>=size且离size最近的2的整数次方的值
         int c = (size >= (MAXIMUM_CAPACITY >>> 1)) ? MAXIMUM_CAPACITY :
             tableSizeFor(size + (size >>> 1) + 1);
         int sc;
@@ -2371,7 +2383,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
             }
             else if (c <= sc || n >= MAXIMUM_CAPACITY)
-                // 若 扩容容量没有达到sc 扩容的阈值 or 数组的长度已经是最大长度了，则break，否则扩容
+                // 若 扩容容量没有达到sc 扩容的阈值 or 数组的长度已经是最大长度了，则不扩容，否则扩容
                 break;
             else if (tab == table) {
                 // tab == table。地址未变，则没有其他线程改动数组，则进行扩容
@@ -2693,20 +2705,26 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // tab 容量小于64，则扩容数组为原来的2倍
                 tryPresize(n << 1);
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
-                // 链表转为红黑树
+                // 发生hash冲突链表转为红黑树。
+                // 锁住的是一个节点
                 synchronized (b) {
+                    // 再次判断tab index位置的节点是否有改变
                     if (tabAt(tab, index) == b) {
+                        // hd 头、tl尾
                         TreeNode<K,V> hd = null, tl = null;
                         for (Node<K,V> e = b; e != null; e = e.next) {
                             TreeNode<K,V> p =
                                 new TreeNode<K,V>(e.hash, e.key, e.val,
                                                   null, null);
                             if ((p.prev = tl) == null)
+                                // 第一次循环设置头
                                 hd = p;
                             else
                                 tl.next = p;
+                            // 尾指针指向最后一个节点
                             tl = p;
                         }
+                        // 红黑树化TreeBin
                         setTabAt(tab, index, new TreeBin<K,V>(hd));
                     }
                 }
@@ -2960,6 +2978,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 else if (ph < h)
                     dir = 1;
                 else if ((pk = p.key) == k || (pk != null && k.equals(pk)))
+                    // 相同的key已经存在，直接返回存在的节点
                     return p;
                 else if ((kc == null &&
                           (kc = comparableClassFor(k)) == null) ||
