@@ -695,6 +695,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // | : 按位或，1 & 1 = 1，1 & 0 = 1，0 & 1 = 1，0 & 0 = 0   1的概率是3/4,0的概率是1/4
         // ^ : 按位异或，1 ^ 1 = 0，1 ^ 0 = 1，0 ^ 1 = 1，0 ^ 0 = 0 1的概率是1/2,0的概率是1/2
         // 因为异或运算1和0出现的概率都是1/2，这样可以使得计算结果更均匀。
+        //无符号右移加入高位影响，与HASH_BITS做与操作保留对hash有用的比特位，有让hash>0的意思
         return (h ^ (h >>> 16)) & HASH_BITS;
     }
 
@@ -2549,7 +2550,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (tabAt(tab, i) == f) {
                         Node<K,V> ln, hn;
                         // 为什么可以通过头节点的哈希值判断是链表还是红黑树呢？
-                        // 因为红黑树的头结点是TreeBin，其是一个标记节点不存实际的节点值，而是存下一个下一个first节点的地址
+                        // 因为红黑树的头结点是TreeBin，其是一个标记节点不存实际的节点值，而是存下一个first节点的地址
                         // 其hash=TREEBIN=-2，key=value=null
                         if (fh >= 0) {
                             // 链表
