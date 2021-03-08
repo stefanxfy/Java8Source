@@ -2263,9 +2263,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /**
      * Returns the stamp bits for resizing a table of size n.
      * Must be negative when shifted left by RESIZE_STAMP_SHIFT.
+     * resizeStamp计算的数值当向左移动RESIZE_STAMP_SHIFT时必须是负值，所以rs的第32-RESIZE_STAMP_SHIFT位必须是1
+     *
      */
     static final int resizeStamp(int n) {
-        // numberOfLeadingZeros 的作用是获取n在二进制下高位有多少个0
+        // numberOfLeadingZeros 的作用是获取n的1左边高位有多少个0
+        // Integer.numberOfLeadingZeros(n)=31-m （m是n二进制1所在位）
+        // 1 << (RESIZE_STAMP_BITS - 1) = 1 << 15 = 2^15
+        // 两个数做|运算，当其中一个数a是2的整数次幂且比另一个数b大时，计算效果相当于a+b
         return Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1));
     }
 
@@ -2343,6 +2348,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 }
+                // (rs << RESIZE_STAMP_SHIFT) + 2，(rs << RESIZE_STAMP_SHIFT)为啥要+2不清楚，
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
                                              (rs << RESIZE_STAMP_SHIFT) + 2))
                     transfer(tab, null);
@@ -2557,7 +2563,6 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             int runBit = fh & n;
                             Node<K,V> lastRun = f;
                             // lastRun并不是一条链表的最后一个，一条链表的节点可以分为两类，
-                            // hash & n=0为低位节点，hash & n!=0为高位节点。
                             // 在循环中寻找lastRun的满足条件是链表中最后一个与头结点不是一类的节点作为lastRun，
                             // 而此时lastRun后面可能还有节点，但都是头结点的同类节点。
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
@@ -2569,6 +2574,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     lastRun = p;
                                 }
                             }
+                            // hash & n=0为低位节点，hash & n!=0为高位节点。
                             // 找到了lastRun
                             if (runBit == 0) {
                                 ln = lastRun;
@@ -2589,8 +2595,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
                             // 通过ph & n 计算结果将原链表分为两条链表ln、hn，
-                            // ln就是低位链表，指位置在旧数组和新数组中一样。((ph & n)=0)
-                            // hn就是高位链表，指位置在旧数组和新数组中不一样，在新数组中需要加上旧数组的长度n ((ph & n)=n)
+                            // 因为n是旧数组的长度，且数值是2的整数次幂，即 n=2^(m-1)（m为不小于2的正整数），对应二进制只有第m位是1，其余都是0，如16(10000)，32(100000)
+                            // 所以ph & n只有两种结果，0或者n，等于0时说明ph的第m位是0，等于n时说明ph的第m位是1
+                            // n的掩码 mask=n-1，16的掩码1111,32的掩码11111，2n的掩码比n的掩码多一位1，十进制上多n，
+                            // mask&ph 起到模运算的效果来映射数组下标
+                            // ph & n=0时， ph的第m位为0，是无效位，所以ph&(n-1)一定等于ph&(2n-1)
+                            // ph & n=n时， ph的第m位是1，是有效位，ph&(2n-1)的第m位为1，其余位和ph&(n-1)一样，所以ph&(n-1)+n=ph&(2n-1)
+                            // ln就是低位节点链表，指位置在旧数组和新数组中一样。((ph & n)=0)
+                            // hn就是高位节点链表，指位置在旧数组和新数组中不一样，在新数组中需要加上旧数组的长度n ((ph & n)=n)
                             // 这得益于，n的数值是2的n次方，其二进制是 1000...（若干0，如4:100,8:1000），和ph 哈希值做&运算就只有两个值，要么0，要么等于n
                             // 正好有这个规律，ph & n=0的节点在新数组的位置不变，ph & n !=0 的节点在数组中的位置是旧数组的位置+旧数组的长度n
                             setTabAt(nextTab, i, ln);
