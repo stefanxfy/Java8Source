@@ -2261,6 +2261,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /* ---------------- Table Initialization and Resizing -------------- */
 
     /**
+     * 返回值作为正在扩容的数据表的size即n的一个标志，rs可以反推出n
      * Returns the stamp bits for resizing a table of size n.
      * Must be negative when shifted left by RESIZE_STAMP_SHIFT.
      * resizeStamp计算的数值当向左移动RESIZE_STAMP_SHIFT时必须是负值，所以rs的第32-RESIZE_STAMP_SHIFT位必须是1
@@ -2339,6 +2340,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                    (n = tab.length) < MAXIMUM_CAPACITY) {
                 // s 节点的个数 >= sc扩容的阈值，并且tab的地址没有改变，即还在扩容中，并且数组的长度没有达到最大值
                 // 则开始扩容
+                // rs 扩容
                 int rs = resizeStamp(n);
                 if (sc < 0) {
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
@@ -2484,7 +2486,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // 若 --i < bound，说明当前批次的迁移任务完成，可继续分配新范围的任务
                 // 也就是一个线程可以多次分到任务，能者多劳。
                 // 还有一种线程呢，虽然拿到了帮助扩容的机会，但是没抢过别人，一次任务也分不到，干脆走了一个过场；
-                // 不过，任务没有分到，但是其他线程的迁移工作还没完成，则这些未分到任务的线程会从后向前检查数组，
+                // 不过，任务没有分到，但是还有一个线程的迁移工作没完成，则这些未分到任务的线程会从后向前检查数组，
                 // 哪些位置没有复制完成就帮着其他线程复制（也不闲着）。
                 if (--i >= bound || finishing)
                     // 向前一个位置迁移复制元素
@@ -2530,12 +2532,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 if (U.compareAndSwapInt(this, SIZECTL, sc = sizeCtl, sc - 1)) {
                     //迁移开始时，会设置 sc=(rs << RESIZE_STAMP_SHIFT) + 2
                     //每当有一个线程参与迁移，sc 就会加 1，每当有一个线程完成迁移，sc 就会减 1。
-                    //因此，这里就是去校验当前 sc 是否和初始值相等。相等，则说明全部线程迁移完成。
+                    //因此，这里就是去校验当前 sc 是否和初始值相等。
+                    // 相等，说明还有一个线程正在扩容
                     if ((sc - 2) != resizeStamp(n) << RESIZE_STAMP_SHIFT)
+                        // 不相等，当前线程扩容任务结束。
                         return;
-                    // 若不相等，说明虽然迁移任务分配完了，但是还有其他线程没有迁移复制完，
+                    // 相等，说明还有一个线程还在扩容迁移
                     // 则当前线程会从后向前检查一遍，哪些位置的节点没有复制完，就帮忙一起复制。
-                    // 注意可能存在多个线程自己的任务完成了，又从后向前扫描帮助其他线程赋值的情况（都是活雷锋啊）
                     // 一圈扫描下来，肯定是全部迁移完毕了，则finishing可提前设置为true。
                     finishing = advance = true;
                     i = n; // recheck before commit
