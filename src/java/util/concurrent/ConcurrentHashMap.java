@@ -2341,7 +2341,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // s 节点的个数 >= sc扩容的阈值，并且tab的地址没有改变，即还在扩容中，并且数组的长度没有达到最大值
                 // 则开始扩容
                 // rs 扩容
+                // 以n=64举例
+                // rs=32793 1000000000011001
                 int rs = resizeStamp(n);
+                // ①(sc >>> RESIZE_STAMP_SHIFT) != rs 为了判断 是不是n=64时的扩容，
+                // 所以rs的作用也很明显了，就是作为正在扩容的数据表的size即n的一个检验标志，而且可以反推出n
+                // ②sc=rs+1说明最后一个扩容线程正在执行首位工作
+                // ③sc==rs+MAX_RESIZERS说明扩容线程数超过最大值
                 if (sc < 0) {
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
@@ -2350,7 +2356,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 }
-                // (rs << RESIZE_STAMP_SHIFT) + 2，(rs << RESIZE_STAMP_SHIFT)为啥要+2不清楚，
+                // (rs << RESIZE_STAMP_SHIFT) + 2，为什么加2呢？
+                // 1000000000011001 0000 0000 0000 0000 + 2
+                // sc = 1000000000011001 0000 0000 0000 0010
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
                                              (rs << RESIZE_STAMP_SHIFT) + 2))
                     transfer(tab, null);
