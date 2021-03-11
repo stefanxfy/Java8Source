@@ -954,15 +954,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     public V get(Object key) {
         Node<K,V>[] tab; Node<K,V> e, p; int n, eh; K ek;
+        // 1. hash高低位扰动
         int h = spread(key.hashCode());
+        // 2.hash映射找到对应数组中的槽
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (e = tabAt(tab, (n - 1) & h)) != null) {
             if ((eh = e.hash) == h) {
+                // 3.如果 槽中的占位节点就是要找的key，则返回
                 if ((ek = e.key) == key || (ek != null && key.equals(ek)))
                     return e.val;
             }
+            // 4.eh < 0 可能遇到 红黑树 or ForwardingNode
             else if (eh < 0)
                 return (p = e.find(h, key)) != null ? p.val : null;
+            // 5. 否则就是普通的链表 遍历比较
             while ((e = e.next) != null) {
                 if (e.hash == h &&
                     ((ek = e.key) == key || (ek != null && key.equals(ek))))
@@ -2348,6 +2353,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // ②sc=rs+1说明最后一个扩容线程正在执行首位工作 百度的，也有说这里判断扩容已经结束
                 // ③sc==rs+MAX_RESIZERS说明扩容线程数超过最大值 百度的
                 // sc < 0 了，rs是一个正数，rs+1和rs + MAX_RESIZERS怎么可能等于一个负数？
+                // 所以这里是一个bug，经一位大佬的指点，这里的确是一个bug。
                 if (sc < 0) {
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
@@ -2358,7 +2364,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         transfer(tab, nt);
                 }
                 // 第一个触发扩容的线程
-                // (rs << RESIZE_STAMP_SHIFT) + 2，为什么加2呢？
+                // (rs << RESIZE_STAMP_SHIFT) + 2，为什么加2呢
                 // 1000000000011001 0000 0000 0000 0000 + 2
                 // sc = 1000000000011001 0000 0000 0000 0010
                 else if (U.compareAndSwapInt(this, SIZECTL, sc,
@@ -2408,6 +2414,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             Node<K,V>[] tab = table; int n;
             if (tab == null || (n = tab.length) == 0) {
                 // tryPresize 在 putAll里调用时，如果数组还未初始化，则进行数组初始化
+                // sizeCtl 是map初始化时的容量值
                 n = (sc > c) ? sc : c;
                 if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
                     try {
@@ -2426,6 +2433,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // 若 扩容容量没有达到sc 扩容的阈值 or 数组的长度已经是最大长度了，则不扩容，否则扩容
                 break;
             else if (tab == table) {
+                //
                 // tab == table。地址未变，则没有其他线程改动数组，则进行扩容
                 // rs的作用是什么
                 int rs = resizeStamp(n);
@@ -2782,7 +2790,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         Node<K,V> b; int n, sc;
         if (tab != null) {
             if ((n = tab.length) < MIN_TREEIFY_CAPACITY)
-                // tab 容量小于64，则扩容数组为原来的2倍
+                // tab 容量小于64
                 tryPresize(n << 1);
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
                 // 链表转为红黑树。
