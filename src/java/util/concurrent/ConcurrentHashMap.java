@@ -2340,22 +2340,24 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                    (n = tab.length) < MAXIMUM_CAPACITY) {
                 // s 节点的个数 >= sc扩容的阈值，并且tab的地址没有改变，即还在扩容中，并且数组的长度没有达到最大值
                 // 则开始扩容
-                // rs 扩容
                 // 以n=64举例
                 // rs=32793 1000000000011001
                 int rs = resizeStamp(n);
                 // ①(sc >>> RESIZE_STAMP_SHIFT) != rs 为了判断 是不是n=64时的扩容，
                 // 所以rs的作用也很明显了，就是作为正在扩容的数据表的size即n的一个检验标志，而且可以反推出n
-                // ②sc=rs+1说明最后一个扩容线程正在执行首位工作
-                // ③sc==rs+MAX_RESIZERS说明扩容线程数超过最大值
+                // ②sc=rs+1说明最后一个扩容线程正在执行首位工作 百度的，也有说这里判断扩容已经结束
+                // ③sc==rs+MAX_RESIZERS说明扩容线程数超过最大值 百度的
+                // sc < 0 了，rs是一个正数，rs+1和rs + MAX_RESIZERS怎么可能等于一个负数？
                 if (sc < 0) {
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
                         transferIndex <= 0)
                         break;
+                    // 帮助扩容的线程+1
                     if (U.compareAndSwapInt(this, SIZECTL, sc, sc + 1))
                         transfer(tab, nt);
                 }
+                // 第一个触发扩容的线程
                 // (rs << RESIZE_STAMP_SHIFT) + 2，为什么加2呢？
                 // 1000000000011001 0000 0000 0000 0000 + 2
                 // sc = 1000000000011001 0000 0000 0000 0010
@@ -2539,7 +2541,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 //则把 sc 减1，表明参与扩容的线程数减少
                 if (U.compareAndSwapInt(this, SIZECTL, sc = sizeCtl, sc - 1)) {
                     //迁移开始时，会设置 sc=(rs << RESIZE_STAMP_SHIFT) + 2
-                    //每当有一个线程参与迁移，sc 就会加 1，每当有一个线程完成迁移，sc 就会减 1。
+                    //每当有一个线程参与迁移，sc 就会加 1。
                     //因此，这里就是去校验当前 sc 是否和初始值相等。
                     // 相等，说明还有一个线程正在扩容
                     if ((sc - 2) != resizeStamp(n) << RESIZE_STAMP_SHIFT)
@@ -2550,8 +2552,6 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     // 一圈扫描下来，肯定是全部迁移完毕了，则finishing可提前设置为true。
                     finishing = advance = true;
                     i = n; // recheck before commit
-                    // 扩容是分段进行的，当前线程迁移完，其他线程可能还没有完成
-                    // 需要再从后向前检查一次是否所有的位置都迁移完成，而且会帮忙一起迁移复制。
                 }
             }
             else if ((f = tabAt(tab, i)) == null)
@@ -2605,7 +2605,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 else
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
-                            // 通过ph & n 计算结果将原链表分为两条链表ln、hn，
+                            // 通过ph & n 计算结果将原链表分为两条链表ln、hn
                             // 因为n是旧数组的长度，且数值是2的整数次幂，即 n=2^(m-1)（m为不小于2的正整数），对应二进制只有第m位是1，其余都是0，如16(10000)，32(100000)
                             // 所以ph & n只有两种结果，0或者n，等于0时说明ph的第m位是0，等于n时说明ph的第m位是1
                             // n的掩码 mask=n-1，16的掩码1111,32的掩码11111，2n的掩码比n的掩码多一位1，十进制上多n，
