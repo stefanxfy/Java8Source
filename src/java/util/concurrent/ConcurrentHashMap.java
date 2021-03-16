@@ -1175,13 +1175,14 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
                     if (oldVal != null)
+                        // 若旧值不为null，则说明是替换，不需要后面的addCount
                         return oldVal;
                     break;
                 }
             }
         }
         // binCount=0, 哈希映射到的节点f未null，且该位置新增节点成功结束整个循环的
-        // binCount>=1, 可能在链表中新增节点
+        // binCount在put里是不可能等于1的
         // binCount=2，可能在红黑树新增节点
         // 9. 元素数量+1
         addCount(1L, binCount);
@@ -2427,24 +2428,38 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void addCount(long x, int check) {
         CounterCell[] as; long b, s;
+        // counterCells!=null，则直接在counterCells里加元素个数，
+        // counterCells=null,则尝试修改baseCount，失败则修改counterCells。
         if ((as = counterCells) != null ||
             !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
             CounterCell a; long v; int m;
-            // 意为没有竞争，初始化乐观的任务true即没有竞争
+            // 初始化乐观的认为true即没有竞争
             boolean uncontended = true;
+            // ThreadLocalRandom.getProbe() 相当于当前线程的hash值
             if (as == null || (m = as.length - 1) < 0 ||
                 (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
                 !(uncontended =
                   U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) {
-                // update失败则uncontended=false，有竞争，则进入fullAddCount 一定会加成功的方法
+                // 找到对应的格子不为null，则cas 该格子内的value+x
+                // counterCells为空or对应格子为空or update格子失败uncontended=false，
+                // 则进入fullAddCount，这个方法是一定会加成功的,但是加成功就立刻退出整个方法了，不判断扩容了？
+                // 个人猜测：
+                // ①假设走到fullAddCount是因为as为空，那么前面外围的if，就是cas修改baseCount失败了，说明有线程修改成功了由它去检查是否扩容
+                // ②假设走到fullAddCount是因为cas修改counterCell失败，说明有其他线程修改成功，则由它去检查扩容。
+                // ③既然都执行到fullAddCount，这个方法流程上还是比较复杂的，可能较为耗时，作者意图应该是不想让一个put方法时间太长，
+                // 既然有其他线程去检查扩容了，当前线程就结束吧，不要让调用者等等太久。
                 fullAddCount(x, uncontended);
                 return;
             }
+            // 从put走到addCount，check是一定>=2的，
+            // 从computeIfAbsent到addCount，可能check =1，意为没有发生哈希冲突的添加元素，则不会检查扩容，
+            // 毕竟扩容是个耗时的操作
             if (check <= 1)
-                // 新增节点时，没有发生哈希冲突的话不会触发扩容检查
                 return;
+            // 刚修改了格子里的元素个数，需要重新统计下元素总个数。
             s = sumCount();
         }
+        // 替换节点和清空数组时，check=-1，只做元素个数递减，不会触发扩容检查，也不会缩容。
         if (check >= 0) {
             Node<K,V>[] tab, nt; int n, sc;
             while (s >= (long)(sc = sizeCtl) && (tab = table) != null &&
