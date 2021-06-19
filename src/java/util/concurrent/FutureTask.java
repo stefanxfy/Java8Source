@@ -322,7 +322,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
      * computation encounters an exception or is cancelled.  This is
      * designed for use with tasks that intrinsically execute more
      * than once.
-     * 没有返回值
+     * 没有返回值 不出异常的，state会一直保持NEW,这是和run的不同点
      * @return {@code true} if successfully run and reset
      */
     protected boolean runAndReset() {

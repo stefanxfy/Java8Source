@@ -692,11 +692,17 @@ public class ReentrantReadWriteLock
             return isHeldExclusively() ? exclusiveCount(getState()) : 0;
         }
 
+        /**
+         * 获取当前线程读锁重入次数
+         * @return
+         */
         final int getReadHoldCount() {
             if (getReadLockCount() == 0)
                 return 0;
 
             Thread current = Thread.currentThread();
+            // 若当前线程是第一个获取读锁的线程，则直接返回firstReaderHoldCount即可，
+            // 无需再往下走获取ThreadLocal记录的值
             if (firstReader == current)
                 return firstReaderHoldCount;
 

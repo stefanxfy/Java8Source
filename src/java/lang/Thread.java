@@ -416,6 +416,7 @@ class Thread implements Runnable {
         this.target = target;
         setPriority(priority);
         if (inheritThreadLocals && parent.inheritableThreadLocals != null)
+            // 将父线程的inheritableThreadLocals复制给子线程的inheritableThreadLocals上
             this.inheritableThreadLocals =
                 ThreadLocal.createInheritedMap(parent.inheritableThreadLocals);
         /* Stash the specified stack size in case the VM cares */

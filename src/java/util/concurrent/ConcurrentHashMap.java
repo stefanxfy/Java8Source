@@ -2608,32 +2608,29 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         }
         int nextn = nextTab.length;
         ForwardingNode<K,V> fwd = new ForwardingNode<K,V>(nextTab);
-        // 从后面的迁移逻辑看到 迁移复制元素是从后向前迁移的
+        // 从后面的迁移逻辑看到 迁移复制元素是从逆序迁移
         // advance= true 则代表可继续向前一个位置迁移复制元素
         boolean advance = true;
-        // 是否所有线程都全部迁移完毕
+        // 是否所有线程都全部迁移完毕，true则可以将nextTab赋值给table了
         boolean finishing = false; // to ensure sweep before committing nextTab
         // i 代表当前线程正在迁移的数组位置，bound代表它本次可以迁移的范围下限
         for (int i = 0, bound = 0;;) {
             Node<K,V> f; int fh;
             while (advance) {
                 int nextIndex, nextBound;
-               // （1）两种情况不需要继续向前一个位置迁移复制元素：
+               // （1）两种情况不需要继续向前一个位置迁移复制元素（逆序）：
                 // ①i每次自减1，i>=bound说明本批次迁移未完成，不需要继续向前推进。
-                // ②finishing标志为true，说明所有线程分配的秦怡任务都已经完成了，则不需要向前推进。
+                // ②finishing标志为true，说明所有线程分配的迁移任务都已经完成了，则不需要向前推进。
                 // 若 --i < bound，说明当前批次的迁移任务完成，可继续分配新范围的任务
                 // 也就是一个线程可以多次分到任务，能者多劳。
-                // 还有一种线程呢，虽然拿到了帮助扩容的机会，但是没抢过别人，一次任务也分不到，干脆走了一个过场；
-                // 不过，任务没有分到，但是还有一个线程的迁移工作没完成，则这些未分到任务的线程会从后向前检查数组，
-                // 哪些位置没有复制完成就帮着其他线程复制（也不闲着）。
                 if (--i >= bound || finishing)
                     // 向前一个位置迁移复制元素
                     advance = false;
                  //(2) 每次执行，都会把 transferIndex 最新的值同步给 nextIndex
-                 //若 transferIndex小于等于0，则说明原数组中所有位置的迁移任务都分配完毕（不代表所有位置都迁移完毕）
-                 //于是，需要跳出while循环，并把 i设为 -1，以跳到（4）判断正在处理的线程是否完成自己负责范围内迁移工作。
                 else if ((nextIndex = transferIndex) <= 0) {
-                    // transferIndex <= 0 扩容完毕
+                    //若 transferIndex小于等于0，则说明原数组中所有位置的迁移任务都分配完毕（不代表所有位置都迁移完毕）
+                    //于是，需要跳出while循环，并把 i设为 -1，
+                    // 以跳到（4）判断正在处理的线程是否完成自己负责范围内迁移工作。
                     i = -1;
                     advance = false;
                 }
@@ -2665,17 +2662,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     sizeCtl = (n << 1) - (n >>> 1);
                     return;
                 }
-                //到这，说明当前线程已经完成了自己的迁移任务（无论参与了几次迁移），
-                //则把 sc 减1，表明参与扩容的线程数减少
+                // 到这，说明所有的迁移任务都分配完了
+                // 当前线程也已经完成了自己的迁移任务（无论参与了几次迁移），
+                // 则sc-1，表明参与扩容的线程数减1
                 if (U.compareAndSwapInt(this, SIZECTL, sc = sizeCtl, sc - 1)) {
-                    //迁移开始时，会设置 sc=(rs << RESIZE_STAMP_SHIFT) + 2
-                    //每当有一个线程参与迁移，sc 就会加 1。
-                    //因此，这里就是去校验当前 sc 是否和初始值相等。
-                    // 相等，说明还有一个线程正在扩容
+                    // 迁移开始时，会设置 sc=(rs << RESIZE_STAMP_SHIFT) + 2
+                    // 每当有一个线程参与迁移，sc 就会加 1。
+                    // 因此，这里就是去校验当前 sc 是否和初始值相等。
                     if ((sc - 2) != resizeStamp(n) << RESIZE_STAMP_SHIFT)
                         // 不相等，当前线程扩容任务结束。
                         return;
-                    // 相等，说明还有一个线程还在扩容迁移
+                    // 相等，说明还有一个线程还在扩容迁移（不一定是触发扩容的第一个线程）
                     // 则当前线程会从后向前检查一遍，哪些位置的节点没有复制完，就帮忙一起复制。
                     // 一圈扫描下来，肯定是全部迁移完毕了，则finishing可提前设置为true。
                     finishing = advance = true;
@@ -2683,7 +2680,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 }
             }
             else if ((f = tabAt(tab, i)) == null)
-                // （5）若i的位置元素为空，则说明当前桶的元素已经被迁移完成，就把头结点设置为fwd标志。
+                // （5）若i的位置元素为空，则说明当前桶的元素已经被迁移完成，就把占位节点设置为fwd标志。
+                // 设置成功，advance置为true，向前推进复制
                 advance = casTabAt(tab, i, null, fwd);
             else if ((fh = f.hash) == MOVED)
                 // （6）若当前位置的头结点是 ForwardingNode ，则说明这个位置的所有节点已经迁移完成，
@@ -2695,15 +2693,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     if (tabAt(tab, i) == f) {
                         Node<K,V> ln, hn;
                         // 为什么可以通过头节点的哈希值判断是链表还是红黑树呢？
-                        // 因为红黑树的头结点是TreeBin，其是一个标记节点不存实际的节点值，而是存下一个first节点的地址
+                        // 因为红黑树的头结点是TreeBin，其是一个标记节点不存实际的节点值，
+                        // 而是存下一个first节点的地址
                         // 其hash=TREEBIN=-2，key=value=null
                         if (fh >= 0) {
                             // 链表
                             int runBit = fh & n;
                             Node<K,V> lastRun = f;
                             // lastRun并不是一条链表的最后一个，一条链表的节点可以分为两类，
-                            // 在循环中寻找lastRun的满足条件是链表中最后一个与头结点不是一类的节点作为lastRun，
-                            // 而此时lastRun后面可能还有节点，但都是头结点的同类节点。
+                            // 在循环中寻找lastRun的满足条件是链表中最后一个与前一个节点不是一类的节点作为lastRun，
+                            // 而此时lastRun后面可能还有节点，但hash都是和lastRun相等的节点。
+                            // 这里找lastRun和java1.7是一样的
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
                                 // 计算p的位置
                                 int b = p.hash & n;
@@ -2714,7 +2714,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                             // hash & n=0为低位节点，hash & n!=0为高位节点。
-                            // 找到了lastRun
+                            // 判断找到的lastRun是低位节点还是高位节点
                             if (runBit == 0) {
                                 ln = lastRun;
                                 hn = null;
@@ -2723,9 +2723,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 hn = lastRun;
                                 ln = null;
                             }
-                            // 如果一条链表都是同类节点，则lastRun就是头节点f，下面的循环不会找，直接走setTabAt
-                            // lastRun之前的结点因为fh&n不确定，所以全部需要重新迁移。
-                            // lastRun之后的节点不需要复制，直接跟随同类链表一起复制到新数组中
+                            // lastRun之前的结点因为fh&n不确定，所以全部需要再hash分配。
                             for (Node<K,V> p = f; p != lastRun; p = p.next) {
                                 int ph = p.hash; K pk = p.key; V pv = p.val;
                                 if ((ph & n) == 0)
@@ -2750,9 +2748,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             advance = true;
                         }
                         else if (f instanceof TreeBin) {
-                            //  是红黑树
-                            //
+                            // 是红黑树，
+                            // 原理上和链表迁移的过程差不多，也是将节点分成高位节点和低位节点
                             TreeBin<K,V> t = (TreeBin<K,V>)f;
+                            // lo低位树头节点，loTail低位树尾节点
+                            // hi高位树头节点，hiTail高位树尾节点
                             TreeNode<K,V> lo = null, loTail = null;
                             TreeNode<K,V> hi = null, hiTail = null;
                             int lc = 0, hc = 0;
@@ -2765,7 +2765,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                         lo = p;
                                     else
                                         loTail.next = p;
-                                    // 尾插法，跑称为新的尾结点
+                                    // 尾插法
                                     loTail = p;
                                     ++lc;
                                 }
@@ -2778,8 +2778,10 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     ++hc;
                                 }
                             }
-                            // 节点的个数 <= UNTREEIFY_THRESHOLD=6, 则树退为链表，链表依然保持链表,TreeNode变为node
-                            // 节点的个数 > UNTREEIFY_THRESHOLD=6, 则链表升为树，树保持树 // 构建为一颗红黑树new TreeBin
+                            // 低位节点的个数 <= UNTREEIFY_THRESHOLD=6, 则树退为链表
+                            // 否则判断是否有高位节点，无，则原先那棵树t就是一棵低位树，直接赋值给ln
+                            // 有高位节点，则低位节点重新树化。
+                            // 高位节点的判断同理
                             ln = (lc <= UNTREEIFY_THRESHOLD) ? untreeify(lo) :
                                 (hc != 0) ? new TreeBin<K,V>(lo) : t;
                             hn = (hc <= UNTREEIFY_THRESHOLD) ? untreeify(hi) :
@@ -2922,7 +2924,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 if (init)
                     break;
             }
-            // 3. 有线程在操作counterCells，baseCount可能空闲，则尝试 直接cas修改baseCount + x
+            // 3. 2中修改CELLSBUSY失败没抢到初始化as的锁，则尝试 直接cas修改baseCount + x
             else if (U.compareAndSwapLong(this, BASECOUNT, v = baseCount, v + x))
                 break;                          // Fall back on using base
         }
